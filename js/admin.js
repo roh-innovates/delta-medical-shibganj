@@ -22,13 +22,19 @@
   ];
 
   var appointments = [];
+  var doctorsList = [];
+  var activeTab = "appointments";
   var filters = {
     search: "",
     doctor: "All",
     status: "All",
     date: ""
   };
-  var pendingDeleteRow = null;
+  var docFilters = {
+    search: "",
+    active: "all"
+  };
+  var pendingDeleteTarget = null;
   var toastTimer = null;
   var realtimeChannel = null;
 
@@ -109,16 +115,31 @@
   }
 
   function lookupBanglaDoctorName(enOrBnName) {
-    if (!enOrBnName || !Array.isArray(window.DOCTORS)) return "";
+    if (!enOrBnName) return "";
     var target = String(enOrBnName).trim().toLowerCase();
-    var match = window.DOCTORS.find(function (d) {
-      return (
-        (d.name.en && d.name.en.toLowerCase() === target) ||
-        (d.name.bn && d.name.bn === enOrBnName)
-      );
-    });
-    if (match && match.name.bn && match.name.bn !== enOrBnName) {
-      return match.name.bn;
+
+    if (doctorsList.length) {
+      var dbMatch = doctorsList.find(function (d) {
+        return (
+          (d.name_en && d.name_en.trim().toLowerCase() === target) ||
+          (d.name_bn && d.name_bn.trim() === enOrBnName)
+        );
+      });
+      if (dbMatch && dbMatch.name_bn && dbMatch.name_bn !== enOrBnName) {
+        return dbMatch.name_bn;
+      }
+    }
+
+    if (Array.isArray(window.DOCTORS)) {
+      var match = window.DOCTORS.find(function (d) {
+        return (
+          (d.name.en && d.name.en.toLowerCase() === target) ||
+          (d.name.bn && d.name.bn === enOrBnName)
+        );
+      });
+      if (match && match.name.bn && match.name.bn !== enOrBnName) {
+        return match.name.bn;
+      }
     }
     return "";
   }
@@ -168,24 +189,49 @@
   }
 
   /* ------------ Populate Modal Presets & Datalists ------------ */
+  function getEffectiveDoctorPresets() {
+    var specs = window.SPECIALTIES || {};
+    if (doctorsList.length) {
+      return doctorsList.map(function (d) {
+        return {
+          en: d.name_en || d.name_bn || "",
+          bn: d.name_bn || d.name_en || "",
+          dept: d.specialty_en || d.specialty_bn || "Outpatient",
+          active: d.is_active !== false
+        };
+      });
+    }
+    return (window.DOCTORS || []).map(function (doc) {
+      var firstSpec = (doc.specialties && doc.specialties[0]) || "medicine";
+      var deptEn = specs[firstSpec] ? specs[firstSpec].en : "Outpatient";
+      return {
+        en: doc.name.en,
+        bn: doc.name.bn,
+        dept: deptEn,
+        active: true
+      };
+    });
+  }
+
   function populateModalPresets() {
-    var docs = window.DOCTORS || [];
+    var docs = getEffectiveDoctorPresets();
     var specs = window.SPECIALTIES || {};
     var presetSelect = $("mQuickPreset");
     var docDatalist = $("doctorsDatalist");
     var deptDatalist = $("departmentsDatalist");
+    var specBnDatalist = $("specBnDatalist");
+    var specEnDatalist = $("specEnDatalist");
 
     if (presetSelect) {
       var html = '<option value="">— Select to auto-fill Doctor & Department —</option>';
       if (docs.length) {
         html += '<optgroup label="Specialist Doctors">';
         docs.forEach(function (doc) {
-          var firstSpec = (doc.specialties && doc.specialties[0]) || "medicine";
-          var deptEn = specs[firstSpec] ? specs[firstSpec].en : "Outpatient";
-          var val = JSON.stringify({ doctor: doc.name.en, dept: deptEn });
+          var val = JSON.stringify({ doctor: doc.en, dept: doc.dept });
+          var statusTag = doc.active ? "" : " [Off-Duty]";
           html +=
             '<option value="' + escapeHtml(val) + '">' +
-            escapeHtml(doc.name.en + " (" + doc.name.bn + ") — " + deptEn) +
+            escapeHtml(doc.en + (doc.bn && doc.bn !== doc.en ? " (" + doc.bn + ")" : "") + " — " + doc.dept + statusTag) +
             "</option>";
         });
         html += "</optgroup>";
@@ -197,19 +243,10 @@
       });
       html += "</optgroup>";
       presetSelect.innerHTML = html;
-
-      presetSelect.addEventListener("change", function () {
-        if (!presetSelect.value) return;
-        try {
-          var parsed = JSON.parse(presetSelect.value);
-          if (parsed.doctor) $("mDoctorName").value = parsed.doctor;
-          if (parsed.dept) $("mDepartment").value = parsed.dept;
-        } catch (e) { /* ignore */ }
-      });
     }
 
     if (docDatalist) {
-      var docNames = docs.map(function (d) { return d.name.en; }).concat(["Duty Doctor", "Diagnostic Unit"]);
+      var docNames = docs.map(function (d) { return d.en; }).concat(["Duty Doctor", "Diagnostic Unit"]);
       docDatalist.innerHTML = docNames.map(function (n) {
         return '<option value="' + escapeHtml(n) + '"></option>';
       }).join("");
@@ -217,6 +254,9 @@
 
     if (deptDatalist) {
       var deptSet = [];
+      docs.forEach(function (d) {
+        if (d.dept && deptSet.indexOf(d.dept) === -1) deptSet.push(d.dept);
+      });
       Object.keys(specs).forEach(function (k) {
         if (deptSet.indexOf(specs[k].en) === -1) deptSet.push(specs[k].en);
       });
@@ -224,6 +264,32 @@
         if (deptSet.indexOf(d.dept) === -1) deptSet.push(d.dept);
       });
       deptDatalist.innerHTML = deptSet.map(function (n) {
+        return '<option value="' + escapeHtml(n) + '"></option>';
+      }).join("");
+    }
+
+    if (specBnDatalist) {
+      var bnSet = [];
+      Object.keys(specs).forEach(function (k) {
+        if (specs[k].bn && bnSet.indexOf(specs[k].bn) === -1) bnSet.push(specs[k].bn);
+      });
+      doctorsList.forEach(function (d) {
+        if (d.specialty_bn && bnSet.indexOf(d.specialty_bn) === -1) bnSet.push(d.specialty_bn);
+      });
+      specBnDatalist.innerHTML = bnSet.map(function (n) {
+        return '<option value="' + escapeHtml(n) + '"></option>';
+      }).join("");
+    }
+
+    if (specEnDatalist) {
+      var enSet = [];
+      Object.keys(specs).forEach(function (k) {
+        if (specs[k].en && enSet.indexOf(specs[k].en) === -1) enSet.push(specs[k].en);
+      });
+      doctorsList.forEach(function (d) {
+        if (d.specialty_en && enSet.indexOf(d.specialty_en) === -1) enSet.push(d.specialty_en);
+      });
+      specEnDatalist.innerHTML = enSet.map(function (n) {
         return '<option value="' + escapeHtml(n) + '"></option>';
       }).join("");
     }
@@ -248,6 +314,9 @@
     $("countPending").textContent = String(pendingCount);
     $("countConfirmed").textContent = String(confirmedCount);
 
+    var tabApptBadge = $("tabAppointmentsCount");
+    if (tabApptBadge) tabApptBadge.textContent = String(total);
+
     var todayLbl = $("todayDateLabel");
     if (todayLbl) todayLbl.textContent = "Date: " + today;
   }
@@ -258,9 +327,9 @@
     var prev = filters.doctor || "All";
     var names = [];
 
-    (window.DOCTORS || []).forEach(function (d) {
-      if (d.name && d.name.en && names.indexOf(d.name.en) === -1) {
-        names.push(d.name.en);
+    getEffectiveDoctorPresets().forEach(function (d) {
+      if (d.en && names.indexOf(d.en) === -1) {
+        names.push(d.en);
       }
     });
     ["Duty Doctor", "Diagnostic Unit"].forEach(function (n) {
@@ -749,44 +818,552 @@
       });
   }
 
-  /* ------------ Delete Confirmation Logic ------------ */
+  /* ------------ Tab Switcher (Appointments vs Manage Doctors) ------------ */
+  function switchTab(tabName) {
+    activeTab = tabName === "doctors" ? "doctors" : "appointments";
+    var isAppt = activeTab === "appointments";
+
+    var apptBtn = $("tabAppointmentsBtn");
+    var docBtn = $("tabDoctorsBtn");
+    var apptPanel = $("appointmentsPanel");
+    var docPanel = $("doctorsPanel");
+    var apptBadge = $("tabAppointmentsCount");
+    var docBadge = $("tabDoctorsCount");
+
+    if (apptPanel) apptPanel.classList.toggle("hidden", !isAppt);
+    if (docPanel) docPanel.classList.toggle("hidden", isAppt);
+
+    if (apptBtn) {
+      apptBtn.setAttribute("aria-selected", isAppt ? "true" : "false");
+      apptBtn.className =
+        "flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition cursor-pointer " +
+        (isAppt ? "bg-brand-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100");
+    }
+    if (docBtn) {
+      docBtn.setAttribute("aria-selected", !isAppt ? "true" : "false");
+      docBtn.className =
+        "flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition cursor-pointer " +
+        (!isAppt ? "bg-brand-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100");
+    }
+    if (apptBadge) {
+      apptBadge.className =
+        "rounded-full px-2 py-0.5 text-xs font-extrabold " +
+        (isAppt ? "bg-white/20 text-white" : "bg-slate-200/80 text-slate-700");
+    }
+    if (docBadge) {
+      docBadge.className =
+        "rounded-full px-2 py-0.5 text-xs font-extrabold " +
+        (!isAppt ? "bg-white/20 text-white" : "bg-slate-200/80 text-slate-700");
+    }
+  }
+
+  /* ------------ Manage Doctors CRUD (`doctors` table) ------------ */
+  function findDoctorById(idStr) {
+    return doctorsList.find(function (d) {
+      return String(d.id) === String(idStr);
+    });
+  }
+
+  function updateDoctorCounters() {
+    var total = doctorsList.length;
+    var active = 0;
+    var offDuty = 0;
+    doctorsList.forEach(function (d) {
+      if (d.is_active) active++;
+      else offDuty++;
+    });
+
+    if ($("docCountTotal")) $("docCountTotal").textContent = String(total);
+    if ($("docCountActive")) $("docCountActive").textContent = String(active);
+    if ($("docCountOffDuty")) $("docCountOffDuty").textContent = String(offDuty);
+    if ($("tabDoctorsCount")) $("tabDoctorsCount").textContent = String(total);
+  }
+
+  function getFilteredDoctors() {
+    var q = docFilters.search.trim().toLowerCase();
+    return doctorsList.filter(function (doc) {
+      if (docFilters.active === "active" && !doc.is_active) return false;
+      if (docFilters.active === "inactive" && doc.is_active) return false;
+      if (q) {
+        var hay = [
+          doc.name_bn, doc.name_en,
+          doc.qualifications,
+          doc.specialty_bn, doc.specialty_en,
+          doc.visiting_days, doc.visiting_hours,
+          doc.room_no
+        ].join(" ").toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderDoctorsTable() {
+    var tbody = $("doctorsTbody");
+    var empty = $("doctorsEmptyState");
+    var meta = $("doctorsResultsMeta");
+    var seedBtn = $("seedDoctorsBtn");
+    if (!tbody) return;
+
+    var list = getFilteredDoctors();
+    if (meta) {
+      meta.textContent =
+        "Showing " + list.length + " of " + doctorsList.length + " doctor" + (doctorsList.length === 1 ? "" : "s");
+    }
+
+    if (!list.length) {
+      tbody.innerHTML = "";
+      if (empty) empty.classList.remove("hidden");
+      if (seedBtn) {
+        var showSeed = doctorsList.length === 0 && Array.isArray(window.DOCTORS) && window.DOCTORS.length > 0;
+        seedBtn.classList.toggle("hidden", !showSeed);
+      }
+      return;
+    }
+
+    if (empty) empty.classList.add("hidden");
+
+    tbody.innerHTML = list.map(function (doc, idx) {
+      var isActive = doc.is_active !== false;
+      var switchTrack = isActive ? "bg-emerald-500" : "bg-slate-300";
+      var switchKnob = isActive ? "translate-x-5" : "translate-x-0.5";
+      var statusBadge = isActive
+        ? '<span class="text-xs font-bold text-emerald-700">Active</span>'
+        : '<span class="text-xs font-bold text-slate-500">Off-Duty</span>';
+
+      return (
+        '<tr class="hover:bg-slate-50/80 transition align-top">' +
+          '<td class="py-3.5 px-3 text-center font-extrabold text-slate-500">' + (idx + 1) + "</td>" +
+
+          // Doctor Name & Qualifications
+          '<td class="py-3.5 px-4">' +
+            '<p class="font-bold text-slate-900 leading-snug">' + escapeHtml(doc.name_bn || doc.name_en || "—") + "</p>" +
+            (doc.name_en && doc.name_en !== doc.name_bn
+              ? '<p class="text-xs font-semibold text-brand-700 mt-0.5">' + escapeHtml(doc.name_en) + "</p>"
+              : "") +
+            (doc.qualifications
+              ? '<p class="text-xs text-slate-500 mt-1 leading-relaxed max-w-xs">' + escapeHtml(doc.qualifications) + "</p>"
+              : "") +
+          "</td>" +
+
+          // Specialty (BN & EN)
+          '<td class="py-3.5 px-4">' +
+            (doc.specialty_bn
+              ? '<span class="inline-block rounded-full bg-brand-50 text-brand-800 border border-brand-100 px-2.5 py-0.5 text-xs font-bold">' +
+                  escapeHtml(doc.specialty_bn) +
+                "</span>"
+              : "") +
+            (doc.specialty_en
+              ? '<p class="text-xs text-slate-500 mt-1">' + escapeHtml(doc.specialty_en) + "</p>"
+              : "") +
+          "</td>" +
+
+          // Visiting Days & Hours
+          '<td class="py-3.5 px-4">' +
+            '<span class="inline-block rounded-md bg-slate-100 text-slate-800 px-2 py-0.5 text-xs font-bold">' +
+              escapeHtml(doc.visiting_days || "—") +
+            "</span>" +
+            (doc.visiting_hours
+              ? '<p class="text-xs font-medium text-slate-600 mt-1">' + escapeHtml(doc.visiting_hours) + "</p>"
+              : "") +
+          "</td>" +
+
+          // Room No
+          '<td class="py-3.5 px-4 whitespace-nowrap">' +
+            (doc.room_no
+              ? '<span class="inline-block rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700">' +
+                  escapeHtml(doc.room_no) +
+                "</span>"
+              : '<span class="text-xs text-slate-300 italic">—</span>') +
+          "</td>" +
+
+          // Quick Active / Off-Duty Toggle Switch
+          '<td class="py-3.5 px-4 whitespace-nowrap">' +
+            '<div class="inline-flex items-center gap-2.5">' +
+              '<button type="button" role="switch" aria-checked="' + (isActive ? "true" : "false") + '" ' +
+                      'data-toggle-doctor="' + escapeHtml(doc.id) + '" ' +
+                      'title="Toggle Active / Off-Duty status" ' +
+                      'class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1 ' + switchTrack + '">' +
+                '<span class="sr-only">Toggle duty status for ' + escapeHtml(doc.name_en || doc.name_bn) + "</span>" +
+                '<span class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ' + switchKnob + '"></span>' +
+              "</button>" +
+              statusBadge +
+            "</div>" +
+          "</td>" +
+
+          // Edit & Delete Actions
+          '<td class="py-3.5 px-4 text-right whitespace-nowrap">' +
+            '<div class="inline-flex items-center gap-1.5">' +
+              '<button type="button" data-edit-doctor="' + escapeHtml(doc.id) + '" title="Edit doctor" ' +
+                      'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-brand-50 hover:border-brand-200 text-slate-600 hover:text-brand-700 transition">' +
+                '<svg class="w-4 h-4"><use href="#i-edit"/></svg>' +
+              "</button>" +
+              '<button type="button" data-delete-doctor="' + escapeHtml(doc.id) + '" title="Delete doctor" ' +
+                      'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-600 hover:text-rose-600 transition">' +
+                '<svg class="w-4 h-4"><use href="#i-trash"/></svg>' +
+              "</button>" +
+            "</div>" +
+          "</td>" +
+        "</tr>"
+      );
+    }).join("");
+  }
+
+  function loadDoctors(silent) {
+    if (!window.supabaseClient) return Promise.resolve();
+    var icon = $("refreshIcon");
+    if (icon && !silent) icon.classList.add("animate-spin");
+
+    return window.supabaseClient
+      .from("doctors")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .then(function (res) {
+        if (res.error) {
+          if (activeTab === "doctors") {
+            setDbError("Doctors table: " + res.error.message);
+          }
+          return;
+        }
+        if (activeTab === "doctors") setDbError("");
+        doctorsList = Array.isArray(res.data) ? res.data : [];
+        updateDoctorCounters();
+        renderDoctorsTable();
+        populateModalPresets();
+        populateDoctorFilter();
+      })
+      .catch(function (err) {
+        if (activeTab === "doctors") {
+          setDbError((err && err.message) || "Failed to load doctors.");
+        }
+      })
+      .finally(function () {
+        if (icon) icon.classList.remove("animate-spin");
+      });
+  }
+
+  function handleToggleDoctorActive(btn) {
+    var idStr = btn.getAttribute("data-toggle-doctor");
+    var doc = findDoctorById(idStr);
+    if (!doc) return;
+
+    var prevState = doc.is_active !== false;
+    var nextState = !prevState;
+    btn.disabled = true;
+
+    window.supabaseClient
+      .from("doctors")
+      .update({ is_active: nextState })
+      .eq("id", doc.id)
+      .then(function (res) {
+        if (res.error) {
+          showToast("Failed to update status: " + res.error.message, true);
+          return;
+        }
+        doc.is_active = nextState;
+        updateDoctorCounters();
+        renderDoctorsTable();
+        populateModalPresets();
+        showToast((doc.name_en || doc.name_bn) + " is now " + (nextState ? "Active" : "Off-Duty"));
+      })
+      .catch(function (err) {
+        showToast((err && err.message) || "Network error", true);
+      })
+      .finally(function () {
+        btn.disabled = false;
+      });
+  }
+
+  function showDoctorModalError(msg) {
+    var errEl = $("doctorModalError");
+    if (!errEl) return;
+    if (!msg) {
+      errEl.textContent = "";
+      errEl.classList.add("hidden");
+    } else {
+      errEl.textContent = msg;
+      errEl.classList.remove("hidden");
+    }
+  }
+
+  function openAddDoctorModal() {
+    $("dId").value = "";
+    $("dNameBn").value = "";
+    $("dNameEn").value = "";
+    $("dQualifications").value = "";
+    $("dSpecialtyBn").value = "";
+    $("dSpecialtyEn").value = "";
+    $("dVisitingDays").value = "";
+    $("dVisitingHours").value = "";
+    $("dRoomNo").value = "";
+    $("dIsActive").checked = true;
+
+    $("doctorModalTitle").textContent = "+ নতুন ডাক্তার যোগ করুন (Add Doctor)";
+    $("doctorModalSubtitle").textContent = "Add a specialist doctor to the live clinic directory";
+    $("doctorModalSaveBtn").textContent = "Add Doctor";
+    showDoctorModalError("");
+
+    var dlg = $("doctorModal");
+    if (dlg && typeof dlg.showModal === "function") dlg.showModal();
+    setTimeout(function () { $("dNameBn").focus(); }, 60);
+  }
+
+  function openEditDoctorModal(idStr) {
+    var doc = findDoctorById(idStr);
+    if (!doc) return;
+
+    $("dId").value = String(doc.id);
+    $("dNameBn").value = doc.name_bn || "";
+    $("dNameEn").value = doc.name_en || "";
+    $("dQualifications").value = doc.qualifications || "";
+    $("dSpecialtyBn").value = doc.specialty_bn || "";
+    $("dSpecialtyEn").value = doc.specialty_en || "";
+    $("dVisitingDays").value = doc.visiting_days || "";
+    $("dVisitingHours").value = doc.visiting_hours || "";
+    $("dRoomNo").value = doc.room_no || "";
+    $("dIsActive").checked = doc.is_active !== false;
+
+    $("doctorModalTitle").textContent = "Edit Doctor Details";
+    $("doctorModalSubtitle").textContent = "Update chamber schedule, qualifications, room, or duty status";
+    $("doctorModalSaveBtn").textContent = "Save Changes";
+    showDoctorModalError("");
+
+    var dlg = $("doctorModal");
+    if (dlg && typeof dlg.showModal === "function") dlg.showModal();
+  }
+
+  function closeDoctorModal() {
+    var dlg = $("doctorModal");
+    if (dlg && dlg.open) dlg.close();
+  }
+
+  function handleDoctorModalSubmit(e) {
+    e.preventDefault();
+    var editingIdStr = $("dId").value;
+    var name_bn = ($("dNameBn").value || "").trim();
+    var name_en = ($("dNameEn").value || "").trim();
+    var qualifications = ($("dQualifications").value || "").trim();
+    var specialty_bn = ($("dSpecialtyBn").value || "").trim();
+    var specialty_en = ($("dSpecialtyEn").value || "").trim();
+    var visiting_days = ($("dVisitingDays").value || "").trim();
+    var visiting_hours = ($("dVisitingHours").value || "").trim();
+    var room_no = ($("dRoomNo").value || "").trim();
+    var is_active = !!$("dIsActive").checked;
+
+    if (!name_bn) {
+      showDoctorModalError("Please enter the doctor's Bangla name.");
+      $("dNameBn").focus();
+      return;
+    }
+    if (!name_en) {
+      showDoctorModalError("Please enter the doctor's English name.");
+      $("dNameEn").focus();
+      return;
+    }
+    if (!specialty_bn) {
+      showDoctorModalError("Please enter the specialty in Bangla.");
+      $("dSpecialtyBn").focus();
+      return;
+    }
+    if (!specialty_en) {
+      showDoctorModalError("Please enter the specialty in English.");
+      $("dSpecialtyEn").focus();
+      return;
+    }
+    if (!visiting_days) {
+      showDoctorModalError("Please enter visiting days (e.g. Daily or Friday, Tuesday).");
+      $("dVisitingDays").focus();
+      return;
+    }
+    if (!visiting_hours) {
+      showDoctorModalError("Please enter visiting hours (e.g. 9:00 AM – 4:00 PM).");
+      $("dVisitingHours").focus();
+      return;
+    }
+
+    var payload = {
+      name_bn: name_bn,
+      name_en: name_en,
+      qualifications: qualifications || null,
+      specialty_bn: specialty_bn,
+      specialty_en: specialty_en,
+      visiting_days: visiting_days,
+      visiting_hours: visiting_hours,
+      room_no: room_no || null,
+      is_active: is_active
+    };
+
+    var saveBtn = $("doctorModalSaveBtn");
+    saveBtn.disabled = true;
+    var originalText = saveBtn.textContent;
+    saveBtn.textContent = "Saving…";
+    showDoctorModalError("");
+
+    var req;
+    if (editingIdStr) {
+      var existing = findDoctorById(editingIdStr);
+      var targetId = existing ? existing.id : editingIdStr;
+      req = window.supabaseClient
+        .from("doctors")
+        .update(payload)
+        .eq("id", targetId);
+    } else {
+      req = window.supabaseClient
+        .from("doctors")
+        .insert([payload]);
+    }
+
+    req
+      .then(function (res) {
+        if (res.error) {
+          showDoctorModalError(res.error.message || "Could not save doctor.");
+          return;
+        }
+        closeDoctorModal();
+        showToast(editingIdStr ? "Doctor details updated" : "New doctor added");
+        return loadDoctors(true);
+      })
+      .catch(function (err) {
+        showDoctorModalError((err && err.message) || "Network error while saving doctor.");
+      })
+      .finally(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = originalText;
+      });
+  }
+
+  function seedHardcodedDoctors() {
+    if (!window.supabaseClient || !Array.isArray(window.DOCTORS) || !window.DOCTORS.length) return;
+    var btn = $("seedDoctorsBtn");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Importing…";
+    }
+
+    var specs = window.SPECIALTIES || {};
+    var dayLabels = window.DAY_LABELS || {};
+
+    var rows = window.DOCTORS.map(function (doc) {
+      var spBn = (doc.specialties || []).map(function (k) { return specs[k] ? specs[k].bn : k; }).join(", ");
+      var spEn = (doc.specialties || []).map(function (k) { return specs[k] ? specs[k].en : k; }).join(", ");
+
+      var daysArr = [];
+      var hoursArr = [];
+      (doc.schedule || []).forEach(function (slot) {
+        if (slot.daily) {
+          if (daysArr.indexOf("Daily") === -1) daysArr.push("Daily");
+        } else if (Array.isArray(slot.days)) {
+          slot.days.forEach(function (dk) {
+            var lbl = dayLabels[dk] ? dayLabels[dk].en : dk;
+            if (daysArr.indexOf(lbl) === -1) daysArr.push(lbl);
+          });
+        }
+        if (slot.bn) hoursArr.push(slot.bn);
+      });
+
+      return {
+        name_bn: doc.name.bn,
+        name_en: doc.name.en,
+        qualifications: doc.degrees.bn || doc.degrees.en || "",
+        specialty_bn: spBn || doc.focus.bn || "",
+        specialty_en: spEn || doc.focus.en || "",
+        visiting_days: daysArr.join(", ") || "Daily",
+        visiting_hours: hoursArr.join(" / ") || "",
+        room_no: null,
+        is_active: true
+      };
+    });
+
+    window.supabaseClient
+      .from("doctors")
+      .insert(rows)
+      .then(function (res) {
+        if (res.error) {
+          showToast("Import failed: " + res.error.message, true);
+          return;
+        }
+        showToast("Imported " + rows.length + " clinic doctors");
+        return loadDoctors(true);
+      })
+      .catch(function (err) {
+        showToast((err && err.message) || "Import failed", true);
+      })
+      .finally(function () {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Import 12 Existing Clinic Doctors";
+        }
+      });
+  }
+
+  /* ------------ Unified Delete Confirmation Logic (Serials & Doctors) ------------ */
   function openDeleteModal(idStr) {
     var row = findRowById(idStr);
     if (!row) return;
-    pendingDeleteRow = row;
-    $("delPatientLabel").textContent =
-      (row.patient_name || "Unnamed") + " (" + (row.appointment_date || "No date") + ")";
+    pendingDeleteTarget = { type: "appointment", row: row };
+    if ($("delModalTitle")) $("delModalTitle").textContent = "Delete Serial Record?";
+    if ($("delModalDesc")) {
+      $("delModalDesc").innerHTML =
+        'Are you sure you want to permanently remove the serial for <strong class="text-slate-900">' +
+        escapeHtml((row.patient_name || "Unnamed") + " (" + (row.appointment_date || "No date") + ")") +
+        "</strong>? This action cannot be undone.";
+    }
+    var dlg = $("deleteModal");
+    if (dlg && typeof dlg.showModal === "function") dlg.showModal();
+  }
+
+  function openDeleteDoctorModal(idStr) {
+    var doc = findDoctorById(idStr);
+    if (!doc) return;
+    pendingDeleteTarget = { type: "doctor", row: doc };
+    if ($("delModalTitle")) $("delModalTitle").textContent = "Delete Doctor?";
+    if ($("delModalDesc")) {
+      $("delModalDesc").innerHTML =
+        'Are you sure you want to permanently remove <strong class="text-slate-900">' +
+        escapeHtml((doc.name_bn || "") + (doc.name_en ? " (" + doc.name_en + ")" : "")) +
+        "</strong> from the doctors directory? This action cannot be undone.";
+    }
     var dlg = $("deleteModal");
     if (dlg && typeof dlg.showModal === "function") dlg.showModal();
   }
 
   function closeDeleteModal() {
-    pendingDeleteRow = null;
+    pendingDeleteTarget = null;
     var dlg = $("deleteModal");
     if (dlg && dlg.open) dlg.close();
   }
 
   function confirmDelete() {
-    if (!pendingDeleteRow) return;
-    var targetRow = pendingDeleteRow;
+    if (!pendingDeleteTarget) return;
+    var target = pendingDeleteTarget;
+    var tableName = target.type === "doctor" ? "doctors" : "appointments";
     var btn = $("delConfirmBtn");
     btn.disabled = true;
     btn.textContent = "Deleting…";
 
     window.supabaseClient
-      .from("appointments")
+      .from(tableName)
       .delete()
-      .eq("id", targetRow.id)
+      .eq("id", target.row.id)
       .then(function (res) {
         if (res.error) {
           showToast("Delete failed: " + res.error.message, true);
           return;
         }
-        appointments = appointments.filter(function (r) { return r.id !== targetRow.id; });
-        updateCounters();
-        renderTable();
+        if (target.type === "doctor") {
+          doctorsList = doctorsList.filter(function (d) { return d.id !== target.row.id; });
+          updateDoctorCounters();
+          renderDoctorsTable();
+          populateModalPresets();
+          populateDoctorFilter();
+          showToast("Doctor deleted");
+        } else {
+          appointments = appointments.filter(function (r) { return r.id !== target.row.id; });
+          updateCounters();
+          renderTable();
+          showToast("Serial record deleted");
+        }
         closeDeleteModal();
-        showToast("Serial record deleted");
       })
       .catch(function (err) {
         showToast((err && err.message) || "Delete failed", true);
@@ -802,12 +1379,19 @@
     if (!window.supabaseClient || realtimeChannel) return;
     try {
       realtimeChannel = window.supabaseClient
-        .channel("admin-appointments-feed")
+        .channel("admin-clinic-feed")
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "appointments" },
           function () {
             loadAppointments(true);
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "doctors" },
+          function () {
+            loadDoctors(true);
           }
         )
         .subscribe();
@@ -837,10 +1421,12 @@
       dashView.classList.remove("hidden");
       $("sessionUserEmail").textContent = session.user.email || "Signed in";
       loadAppointments(false);
+      loadDoctors(true);
       startRealtimeSync();
     } else {
       stopRealtimeSync();
       appointments = [];
+      doctorsList = [];
       dashView.classList.add("hidden");
       loginView.classList.remove("hidden");
     }
@@ -915,16 +1501,99 @@
       pw.type = pw.type === "password" ? "text" : "password";
     });
 
+    // Tab switcher events
+    $("tabAppointmentsBtn").addEventListener("click", function () {
+      switchTab("appointments");
+    });
+    $("tabDoctorsBtn").addEventListener("click", function () {
+      switchTab("doctors");
+      loadDoctors(false);
+    });
+
     // Top bar & Empty state buttons
     $("newSerialBtn").addEventListener("click", openCreateModal);
     $("emptyNewBtn").addEventListener("click", openCreateModal);
     $("refreshBtn").addEventListener("click", function () {
       loadAppointments(false);
+      loadDoctors(false);
     });
+
+    // Quick-fill doctor preset inside Serial modal
+    var presetSelect = $("mQuickPreset");
+    if (presetSelect) {
+      presetSelect.addEventListener("change", function () {
+        if (!presetSelect.value) return;
+        try {
+          var parsed = JSON.parse(presetSelect.value);
+          if (parsed.doctor) $("mDoctorName").value = parsed.doctor;
+          if (parsed.dept) $("mDepartment").value = parsed.dept;
+        } catch (e) { /* ignore */ }
+      });
+    }
 
     // Export CSV & Print Sheet buttons
     $("exportCsvBtn").addEventListener("click", exportFilteredToCsv);
     $("printSheetBtn").addEventListener("click", handlePrintList);
+
+    // Manage Doctors toolbar & table events
+    $("addDoctorBtn").addEventListener("click", openAddDoctorModal);
+    $("emptyAddDoctorBtn").addEventListener("click", openAddDoctorModal);
+    if ($("seedDoctorsBtn")) {
+      $("seedDoctorsBtn").addEventListener("click", seedHardcodedDoctors);
+    }
+    $("docFilterSearch").addEventListener("input", function (e) {
+      docFilters.search = e.target.value || "";
+      renderDoctorsTable();
+    });
+    $("docFilterActive").addEventListener("change", function (e) {
+      docFilters.active = e.target.value || "all";
+      renderDoctorsTable();
+    });
+    $("doctorsTbody").addEventListener("click", function (e) {
+      var toggleBtn = e.target.closest("[data-toggle-doctor]");
+      if (toggleBtn) {
+        handleToggleDoctorActive(toggleBtn);
+        return;
+      }
+      var editBtn = e.target.closest("[data-edit-doctor]");
+      if (editBtn) {
+        openEditDoctorModal(editBtn.getAttribute("data-edit-doctor"));
+        return;
+      }
+      var delBtn = e.target.closest("[data-delete-doctor]");
+      if (delBtn) {
+        openDeleteDoctorModal(delBtn.getAttribute("data-delete-doctor"));
+      }
+    });
+
+    // Create / Edit Doctor modal events
+    $("doctorModalForm").addEventListener("submit", handleDoctorModalSubmit);
+    $("doctorModalCloseBtn").addEventListener("click", closeDoctorModal);
+    $("doctorModalCancelBtn").addEventListener("click", closeDoctorModal);
+    $("doctorModal").addEventListener("click", function (e) {
+      if (e.target === $("doctorModal")) closeDoctorModal();
+    });
+    if ($("docDayQuickBtns")) {
+      $("docDayQuickBtns").addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-day-pick]");
+        if (!btn) return;
+        var dayVal = btn.getAttribute("data-day-pick");
+        var input = $("dVisitingDays");
+        if (!input) return;
+        if (dayVal === "Daily") {
+          input.value = "Daily";
+          return;
+        }
+        var current = (input.value || "")
+          .split(",")
+          .map(function (s) { return s.trim(); })
+          .filter(function (s) { return s && s.toLowerCase() !== "daily"; });
+        var idx = current.indexOf(dayVal);
+        if (idx === -1) current.push(dayVal);
+        else current.splice(idx, 1);
+        input.value = current.join(", ");
+      });
+    }
 
     // Filters
     $("filterSearch").addEventListener("input", function (e) {

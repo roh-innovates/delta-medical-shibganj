@@ -34,3 +34,40 @@ create policy "Authenticated staff full access"
   to authenticated
   using (true)
   with check (true);
+
+-- =====================================================================
+-- Doctors Chamber Directory Table & RLS Policies
+-- =====================================================================
+
+create table if not exists public.doctors (
+  id uuid primary key default gen_random_uuid(),
+  name_bn text not null,
+  name_en text not null,
+  qualifications text,
+  specialty_bn text not null,
+  specialty_en text not null,
+  visiting_days text not null,
+  visiting_hours text not null,
+  room_no text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table public.doctors enable row level security;
+
+-- 1. Allow public website visitors (anon + authenticated) to view doctors
+drop policy if exists "Public can read doctors" on public.doctors;
+create policy "Public can read doctors"
+  on public.doctors
+  for select
+  to anon, authenticated
+  using (true);
+
+-- 2. Allow signed-in reception/admin staff full CRUD access on doctors
+drop policy if exists "Authenticated staff full access on doctors" on public.doctors;
+create policy "Authenticated staff full access on doctors"
+  on public.doctors
+  for all
+  to authenticated
+  using (true)
+  with check (true);

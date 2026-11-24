@@ -79,6 +79,7 @@
       "doc.more": "বিস্তারিত",
       "doc.less": "সংক্ষেপে",
       "doc.schedule": "রোগী দেখার সময়",
+      "doc.room": "কক্ষ নং",
       "doc.photoAlt": "{name} এর ছবি",
 
       "svc.eyebrow": "বিভাগ ও ডায়াগনস্টিক",
@@ -242,6 +243,7 @@
       "doc.more": "Details",
       "doc.less": "Less",
       "doc.schedule": "Visiting hours",
+      "doc.room": "Room No",
       "doc.photoAlt": "Photo of {name}",
 
       "svc.eyebrow": "Departments & Diagnostics",

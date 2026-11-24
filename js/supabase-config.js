@@ -11,7 +11,8 @@
   window.SUPABASE_CONFIG = {
     url: SUPABASE_URL,
     anonKey: SUPABASE_ANON_KEY,
-    table: "appointments"
+    table: "appointments",
+    doctorsTable: "doctors"
   };
 
   if (window.supabase && typeof window.supabase.createClient === "function") {

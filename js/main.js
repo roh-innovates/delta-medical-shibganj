@@ -31,6 +31,10 @@
   var lastFormResult = null;
   var isSubmitting = false;
 
+  // Live doctor list (starts with fallback hardcoded list, replaced on load if Supabase `doctors` has rows)
+  var activeDoctors = Array.isArray(window.DOCTORS) ? window.DOCTORS.slice() : [];
+  var activeSpecialties = Object.assign({}, window.SPECIALTIES || {});
+
   function $(id) {
     return document.getElementById(id);
   }
@@ -51,6 +55,195 @@
     return d.getFullYear() + "-" + m + "-" + day;
   }
 
+  /* ------------ Supabase `doctors` Mapping & Helpers ------------ */
+  function parseVisitingDays(rawDays) {
+    var text = Array.isArray(rawDays) ? rawDays.join(", ") : String(rawDays || "").trim();
+    var lower = text.toLowerCase();
+
+    if (!text) {
+      return { daily: false, days: [], rawLabel: "" };
+    }
+
+    if (
+      /প্রতিদিন|সপ্তাহে\s*[৭7]\s*দিন|daily|every\s*day|everyday|all\s*days|7\s*days/i.test(text)
+    ) {
+      return { daily: true, days: ["sat", "sun", "mon", "tue", "wed", "thu", "fri"], rawLabel: text };
+    }
+
+    var dayPatterns = [
+      { key: "sat", re: /শনি|\bsat(?:urday)?\b/i },
+      { key: "sun", re: /রবি|\bsun(?:day)?\b/i },
+      { key: "mon", re: /সোম|\bmon(?:day)?\b/i },
+      { key: "tue", re: /মঙ্গল|\btue(?:s|sday)?\b/i },
+      { key: "wed", re: /বুধ|\bwed(?:nesday)?\b/i },
+      { key: "thu", re: /বৃহস্পতি|\bthu(?:r|rs|rsday)?\b/i },
+      { key: "fri", re: /শুক্র|\bfri(?:day)?\b/i }
+    ];
+
+    var matched = [];
+    dayPatterns.forEach(function (p) {
+      if (p.re.test(text) || p.re.test(lower)) matched.push(p.key);
+    });
+
+    return { daily: false, days: matched, rawLabel: text };
+  }
+
+  function resolveSpecialtyKeys(specBn, specEn, registry) {
+    var bn = String(specBn || "").trim();
+    var en = String(specEn || "").trim();
+    var combined = (bn + " " + en).toLowerCase();
+    var baseSpecs = window.SPECIALTIES || {};
+    var keys = [];
+
+    var matchers = [
+      { key: "gynae",      re: /গাইনি|গাইনী|প্রসূতি|স্ত্রী|gynae|gyne|obstet/i },
+      { key: "pedsurgery", re: /শিশু\s*সার্জারি|pediatric\s*surg/i },
+      { key: "pediatrics", re: /শিশু|নবজাতক|pediatric|child|newborn/i },
+      { key: "cardiology", re: /হৃদ|কার্ডিও|cardio|heart/i },
+      { key: "neuro",      re: /নিউরো|ব্রেইন|নার্ভ|স্ট্রোক|neuro|brain|spine/i },
+      { key: "skin",       re: /চর্ম|যৌন|skin|dermat|vd\b/i },
+      { key: "ortho",      re: /অর্থো|হাড়|ট্রমা|ortho|trauma/i },
+      { key: "eye",        re: /চক্ষু|eye|ophthal/i },
+      { key: "surgery",    re: /সার্জারি|সার্জারী|সার্জন|surgery|surgeon/i },
+      { key: "medicine",   re: /মেডিসিন|medicine/i }
+    ];
+
+    matchers.forEach(function (m) {
+      if (m.re.test(combined)) {
+        if (m.key === "surgery" && keys.indexOf("pedsurgery") !== -1 && !/জেনারেল|general/i.test(combined)) {
+          return;
+        }
+        keys.push(m.key);
+        if (baseSpecs[m.key]) {
+          registry[m.key] = baseSpecs[m.key];
+        }
+      }
+    });
+
+    if (!keys.length && (en || bn)) {
+      var slug = "spec-" + (en || bn).toLowerCase().replace(/[^a-z0-9\u0980-\u09FF]+/g, "-").replace(/^-|-$/g, "");
+      if (!slug || slug === "spec-") slug = "spec-general";
+      keys.push(slug);
+      registry[slug] = { bn: bn || en, en: en || bn };
+    }
+
+    return keys;
+  }
+
+  function findHardcodedPosterMatch(nameBn, nameEn) {
+    var fallback = window.DOCTORS || [];
+    var enLower = String(nameEn || "").trim().toLowerCase();
+    var bnTrim = String(nameBn || "").trim();
+    return fallback.find(function (d) {
+      return (
+        (enLower && d.name && d.name.en && d.name.en.toLowerCase() === enLower) ||
+        (bnTrim && d.name && d.name.bn && d.name.bn.trim() === bnTrim)
+      );
+    }) || null;
+  }
+
+  function mapSupabaseDoctors(rows) {
+    var nextSpecs = {};
+    var mapped = rows.map(function (row) {
+      var specBn = String(row.specialty_bn || "").trim();
+      var specEn = String(row.specialty_en || "").trim();
+      var specKeys = resolveSpecialtyKeys(specBn, specEn, nextSpecs);
+      var parsedDays = parseVisitingDays(row.visiting_days);
+      var hoursText = String(row.visiting_hours || "").trim();
+      var posterMatch = findHardcodedPosterMatch(row.name_bn, row.name_en);
+
+      return {
+        id: String(row.id),
+        name: {
+          bn: String(row.name_bn || row.name_en || "").trim(),
+          en: String(row.name_en || row.name_bn || "").trim()
+        },
+        focus: {
+          bn: specBn || specEn,
+          en: specEn || specBn
+        },
+        specialtyLabel: {
+          bn: specBn || specEn,
+          en: specEn || specBn
+        },
+        degrees: {
+          bn: String(row.qualifications || "").trim(),
+          en: String(row.qualifications || "").trim()
+        },
+        designation: { bn: "", en: "" },
+        specialties: specKeys,
+        schedule: [
+          {
+            daily: parsedDays.daily,
+            days: parsedDays.days,
+            rawDayLabel: parsedDays.rawLabel,
+            bn: hoursText,
+            en: hoursText
+          }
+        ],
+        room_no: String(row.room_no || "").trim(),
+        poster: posterMatch ? posterMatch.poster : "",
+        face: posterMatch ? posterMatch.face : null,
+        fromSupabase: true
+      };
+    });
+
+    return { doctors: mapped, specialties: nextSpecs };
+  }
+
+  function applyDoctorDirectoryUpdate(nextDoctors, nextSpecs) {
+    activeDoctors = nextDoctors;
+    activeSpecialties = nextSpecs && Object.keys(nextSpecs).length
+      ? nextSpecs
+      : Object.assign({}, window.SPECIALTIES || {});
+
+    if (state.specialty !== "all" && !activeSpecialties[state.specialty]) {
+      state.specialty = "all";
+    }
+
+    updateLocalizedStatsAndLinks();
+    renderSpecialtyControls();
+    renderDoctors();
+    renderFormTargetOptions();
+    updateDayHint();
+  }
+
+  function loadActiveDoctorsFromSupabase() {
+    if (!window.supabaseClient) return;
+
+    window.supabaseClient
+      .from("doctors")
+      .select("*")
+      .eq("is_active", true)
+      .order("created_at", { ascending: true })
+      .then(function (res) {
+        if (res.error) {
+          // Keep hardcoded fallback silently if table isn't ready or offline
+          return;
+        }
+        var rows = Array.isArray(res.data) ? res.data : [];
+        if (rows.length > 0) {
+          var mapped = mapSupabaseDoctors(rows);
+          applyDoctorDirectoryUpdate(mapped.doctors, mapped.specialties);
+          return;
+        }
+
+        // If 0 active rows returned, check whether the `doctors` table itself is empty.
+        // Keep hardcoded fallback ONLY if the `doctors` table is currently empty.
+        return window.supabaseClient
+          .from("doctors")
+          .select("id", { count: "exact", head: true })
+          .then(function (countRes) {
+            if (!countRes.error && typeof countRes.count === "number" && countRes.count > 0) {
+              applyDoctorDirectoryUpdate([], window.SPECIALTIES || {});
+            }
+          });
+      })
+      .catch(function () {
+        /* Fallback to window.DOCTORS on network error */
+      });
+  }
+
   function doctorVisitsOnDay(doc, dayKey) {
     if (dayKey === "all") return true;
     return (doc.schedule || []).some(function (slot) {
@@ -65,12 +258,14 @@
       var dayPart = "";
       if (slot.daily) {
         dayPart = labels.daily ? labels.daily[lang] : (lang === "bn" ? "প্রতিদিন" : "Daily");
-      } else if (Array.isArray(slot.days)) {
+      } else if (Array.isArray(slot.days) && slot.days.length) {
         dayPart = slot.days.map(function (d) {
           return labels[d] ? labels[d][lang] : d;
-        }).join(lang === "bn" ? ", " : ", ");
+        }).join(", ");
+      } else if (slot.rawDayLabel) {
+        dayPart = slot.rawDayLabel;
       }
-      var timePart = slot[lang] || slot.bn || "";
+      var timePart = slot[lang] || slot.bn || slot.en || "";
       return { dayPart: dayPart, timePart: timePart, isDaily: !!slot.daily };
     });
   }
@@ -78,14 +273,14 @@
   /* ------------ Render Specialty Filter & More Chips ------------ */
   function renderSpecialtyControls() {
     var lang = I18N.lang;
-    var specs = window.SPECIALTIES || {};
+    var specs = activeSpecialties;
     var select = $("specFilter");
     if (select) {
       var current = state.specialty;
       var html = '<option value="all">' + escapeHtml(I18N.t("doc.allSpecialties")) + "</option>";
       Object.keys(specs).forEach(function (key) {
         var sel = key === current ? " selected" : "";
-        html += '<option value="' + escapeHtml(key) + '"' + sel + ">" + escapeHtml(specs[key][lang]) + "</option>";
+        html += '<option value="' + escapeHtml(key) + '"' + sel + ">" + escapeHtml(specs[key][lang] || specs[key].en || specs[key].bn) + "</option>";
       });
       select.innerHTML = html;
     }
@@ -95,7 +290,7 @@
       more.innerHTML = Object.keys(specs).map(function (key) {
         return (
           '<a href="#doctors" data-filter-spec="' + escapeHtml(key) + '" ' +
-          'class="chip">' + escapeHtml(specs[key][lang]) + " →</a>"
+          'class="chip">' + escapeHtml(specs[key][lang] || specs[key].en || specs[key].bn) + " →</a>"
         );
       }).join("");
     }
@@ -136,8 +331,8 @@
 
   /* ------------ Filter & Render Doctor Cards ------------ */
   function filterDoctors() {
-    var docs = window.DOCTORS || [];
-    var specs = window.SPECIALTIES || {};
+    var docs = activeDoctors;
+    var specs = activeSpecialties;
     var q = state.search.trim().toLowerCase();
 
     return docs.filter(function (doc) {
@@ -151,13 +346,14 @@
       }
       if (q) {
         var specText = (doc.specialties || []).map(function (s) {
-          return specs[s] ? specs[s].bn + " " + specs[s].en : "";
+          return specs[s] ? (specs[s].bn || "") + " " + (specs[s].en || "") : "";
         }).join(" ");
         var haystack = [
           doc.name.bn, doc.name.en,
           doc.focus.bn, doc.focus.en,
           doc.degrees.bn, doc.degrees.en,
           doc.designation.bn, doc.designation.en,
+          doc.room_no || "",
           specText
         ].join(" ").toLowerCase();
         if (haystack.indexOf(q) === -1) return false;
@@ -173,7 +369,7 @@
     if (!grid) return;
 
     var lang = I18N.lang;
-    var specs = window.SPECIALTIES || {};
+    var specs = activeSpecialties;
     var list = filterDoctors();
 
     if (countEl) {
@@ -191,17 +387,33 @@
     if (empty) empty.classList.add("hidden");
 
     grid.innerHTML = list.map(function (doc) {
-      var name = doc.name[lang] || doc.name.bn;
-      var focus = doc.focus[lang] || doc.focus.bn;
-      var degrees = doc.degrees[lang] || doc.degrees.bn;
+      var name = doc.name[lang] || doc.name.bn || doc.name.en;
+      var focus = doc.focus[lang] || doc.focus.bn || doc.focus.en;
+      var degrees = doc.degrees[lang] || doc.degrees.bn || doc.degrees.en;
       var desig = (doc.designation && (doc.designation[lang] || doc.designation.bn)) || "";
       var faceX = (doc.face && doc.face.x) || 75;
       var faceY = (doc.face && doc.face.y) || 30;
+      var hasPoster = !!doc.poster;
 
-      var badgesHtml = (doc.specialties || []).map(function (sp) {
-        var label = specs[sp] ? specs[sp][lang] : sp;
-        return '<span class="doc-badge">' + escapeHtml(label) + "</span>";
-      }).join(" ");
+      var badgesHtml = "";
+      if (doc.specialtyLabel && (doc.specialtyLabel[lang] || doc.specialtyLabel.bn || doc.specialtyLabel.en)) {
+        badgesHtml = '<span class="doc-badge">' + escapeHtml(doc.specialtyLabel[lang] || doc.specialtyLabel.bn || doc.specialtyLabel.en) + "</span>";
+      } else {
+        badgesHtml = (doc.specialties || []).map(function (sp) {
+          var label = specs[sp] ? (specs[sp][lang] || specs[sp].en || specs[sp].bn) : sp;
+          return '<span class="doc-badge">' + escapeHtml(label) + "</span>";
+        }).join(" ");
+      }
+
+      var avatarHtml = hasPoster
+        ? '<button type="button" data-poster-doc="' + escapeHtml(doc.id) + '" class="doc-avatar group relative" title="' + escapeHtml(I18N.t("doc.poster")) + '">' +
+            '<img src="' + escapeHtml(doc.poster) + '" loading="lazy" decoding="async" ' +
+              'style="object-position:' + faceX + "% " + faceY + '%" ' +
+              'alt="' + escapeHtml(I18N.t("doc.photoAlt", { name: name })) + '" />' +
+          "</button>"
+        : '<div class="doc-avatar grid place-items-center text-brand-600" aria-hidden="true">' +
+            '<svg class="icon w-8 h-8"><use href="#i-steth"/></svg>' +
+          "</div>";
 
       var schedLines = formatScheduleLines(doc, lang).map(function (line) {
         var pillClass = line.isDaily
@@ -209,9 +421,11 @@
           : "bg-brand-100 text-brand-800";
         return (
           '<div class="flex flex-wrap items-center justify-between gap-1.5">' +
-            '<span class="inline-block text-xs font-bold px-2 py-0.5 rounded-md ' + pillClass + '">' +
-              escapeHtml(line.dayPart) +
-            "</span>" +
+            (line.dayPart
+              ? '<span class="inline-block text-xs font-bold px-2 py-0.5 rounded-md ' + pillClass + '">' +
+                  escapeHtml(line.dayPart) +
+                "</span>"
+              : "") +
             '<span class="font-semibold text-slate-700 text-xs sm:text-sm">' +
               escapeHtml(line.timePart) +
             "</span>" +
@@ -219,23 +433,26 @@
         );
       }).join('<div class="my-1 border-t border-slate-200/70"></div>');
 
+      var roomHtml = doc.room_no
+        ? '<p class="mt-2 pt-2 border-t border-slate-200/70 text-xs font-semibold text-slate-600 flex items-center gap-1.5">' +
+            '<svg class="icon w-3.5 h-3.5 text-brand-600"><use href="#i-pin"/></svg>' +
+            '<span>' + escapeHtml(I18N.t("doc.room")) + ": " + escapeHtml(doc.room_no) + "</span>" +
+          "</p>"
+        : "";
+
       return (
         '<article class="doc-card">' +
           '<div class="p-5">' +
             '<div class="flex items-start gap-3.5">' +
-              '<button type="button" data-poster-doc="' + escapeHtml(doc.id) + '" class="doc-avatar group relative" title="' + escapeHtml(I18N.t("doc.poster")) + '">' +
-                '<img src="' + escapeHtml(doc.poster) + '" loading="lazy" decoding="async" ' +
-                  'style="object-position:' + faceX + "% " + faceY + '%" ' +
-                  'alt="' + escapeHtml(I18N.t("doc.photoAlt", { name: name })) + '" />' +
-              "</button>" +
+              avatarHtml +
               '<div class="min-w-0 flex-1">' +
                 '<div class="flex flex-wrap gap-1.5">' + badgesHtml + "</div>" +
                 '<h3 class="mt-1.5 text-lg font-bold text-brand-950 leading-snug">' + escapeHtml(name) + "</h3>" +
-                '<p class="text-xs font-semibold text-delta-600 mt-0.5">' + escapeHtml(focus) + "</p>" +
+                (!doc.fromSupabase && focus ? '<p class="text-xs font-semibold text-delta-600 mt-0.5">' + escapeHtml(focus) + "</p>" : "") +
               "</div>" +
             "</div>" +
 
-            '<p class="mt-3 text-sm font-medium text-slate-700 leading-relaxed">' + escapeHtml(degrees) + "</p>" +
+            (degrees ? '<p class="mt-3 text-sm font-medium text-slate-700 leading-relaxed">' + escapeHtml(degrees) + "</p>" : "") +
             (desig ? '<p class="mt-1 text-xs text-slate-500 leading-relaxed">' + escapeHtml(desig) + "</p>" : "") +
 
             '<div class="doc-sched mt-4">' +
@@ -244,6 +461,7 @@
                 '<span>' + escapeHtml(I18N.t("doc.schedule")) + "</span>" +
               "</p>" +
               schedLines +
+              roomHtml +
             "</div>" +
           "</div>" +
 
@@ -256,9 +474,11 @@
               '<svg class="icon w-4 h-4 text-delta-600"><use href="#i-phone"/></svg>' +
               "<span>" + escapeHtml(I18N.t("doc.call")) + "</span>" +
             "</a>" +
-            '<button type="button" data-poster-doc="' + escapeHtml(doc.id) + '" class="btn btn-outline text-sm py-2.5 px-3" title="' + escapeHtml(I18N.t("doc.poster")) + '" aria-label="' + escapeHtml(I18N.t("doc.poster") + " - " + name) + '">' +
-              '<svg class="icon w-4 h-4 text-brand-600"><use href="#i-img"/></svg>' +
-            "</button>" +
+            (hasPoster
+              ? '<button type="button" data-poster-doc="' + escapeHtml(doc.id) + '" class="btn btn-outline text-sm py-2.5 px-3" title="' + escapeHtml(I18N.t("doc.poster")) + '" aria-label="' + escapeHtml(I18N.t("doc.poster") + " - " + name) + '">' +
+                  '<svg class="icon w-4 h-4 text-brand-600"><use href="#i-img"/></svg>' +
+                "</button>"
+              : "") +
           "</div>" +
         "</article>"
       );
@@ -271,18 +491,23 @@
     if (!select) return;
     var lang = I18N.lang;
     var prev = select.value;
-    var docs = window.DOCTORS || [];
-    var specs = window.SPECIALTIES || {};
+    var docs = activeDoctors;
+    var specs = activeSpecialties;
 
     var html = '<option value="">' + escapeHtml(I18N.t("form.choose")) + "</option>";
 
     if (docs.length) {
       html += '<optgroup label="' + escapeHtml(I18N.t("form.groupDoctors")) + '">';
       docs.forEach(function (doc) {
-        var spNames = (doc.specialties || []).map(function (s) {
-          return specs[s] ? specs[s][lang] : s;
-        }).join(", ");
-        var label = (doc.name[lang] || doc.name.bn) + (spNames ? " — " + spNames : "");
+        var spNames = "";
+        if (doc.specialtyLabel && (doc.specialtyLabel[lang] || doc.specialtyLabel.bn || doc.specialtyLabel.en)) {
+          spNames = doc.specialtyLabel[lang] || doc.specialtyLabel.bn || doc.specialtyLabel.en;
+        } else {
+          spNames = (doc.specialties || []).map(function (s) {
+            return specs[s] ? (specs[s][lang] || specs[s].en || specs[s].bn) : s;
+          }).join(", ");
+        }
+        var label = (doc.name[lang] || doc.name.bn || doc.name.en) + (spNames ? " — " + spNames : "");
         var val = "doc:" + doc.id;
         html += '<option value="' + escapeHtml(val) + '">' + escapeHtml(label) + "</option>";
       });
@@ -328,21 +553,27 @@
     var target = targetSelect.value || "";
     if (target.indexOf("doc:") === 0) {
       var docId = target.slice(4);
-      var doc = (window.DOCTORS || []).find(function (d) { return d.id === docId; });
+      var doc = activeDoctors.find(function (d) { return String(d.id) === String(docId); });
       if (doc && !doctorVisitsOnDay(doc, dayKey)) {
         var visitDays = [];
         (doc.schedule || []).forEach(function (slot) {
-          (slot.days || []).forEach(function (d) {
-            var lbl = dayLabels[d] ? dayLabels[d][lang] : d;
-            if (visitDays.indexOf(lbl) === -1) visitDays.push(lbl);
+          if (Array.isArray(slot.days) && slot.days.length) {
+            slot.days.forEach(function (d) {
+              var lbl = dayLabels[d] ? dayLabels[d][lang] : d;
+              if (visitDays.indexOf(lbl) === -1) visitDays.push(lbl);
+            });
+          } else if (slot.rawDayLabel) {
+            visitDays.push(slot.rawDayLabel);
+          }
+        });
+        if (visitDays.length) {
+          hint.className = "mt-2 text-xs sm:text-sm font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2";
+          hint.textContent = I18N.t("form.warnDay", {
+            doctor: doc.name[lang] || doc.name.bn || doc.name.en,
+            days: visitDays.join(", ")
           });
-        });
-        hint.className = "mt-2 text-xs sm:text-sm font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2";
-        hint.textContent = I18N.t("form.warnDay", {
-          doctor: doc.name[lang] || doc.name.bn,
-          days: visitDays.join(", ")
-        });
-        return;
+          return;
+        }
       }
     }
 
@@ -352,7 +583,7 @@
 
   /* ------------ Update Localized Numbers & Quick WA Links ------------ */
   function updateLocalizedStatsAndLinks() {
-    var docsCount = (window.DOCTORS || []).length;
+    var docsCount = activeDoctors.length;
     var statDocs = $("statDoctors");
     if (statDocs) statDocs.textContent = I18N.num(docsCount) + "+";
 
@@ -380,13 +611,13 @@
 
   /* ------------ Poster Lightbox ------------ */
   function openPoster(docId) {
-    var doc = (window.DOCTORS || []).find(function (d) { return d.id === docId; });
+    var doc = activeDoctors.find(function (d) { return String(d.id) === String(docId); });
     var dlg = $("posterDialog");
     var img = $("posterImg");
     var title = $("posterTitle");
-    if (!doc || !dlg || !img) return;
+    if (!doc || !doc.poster || !dlg || !img) return;
 
-    var name = doc.name[I18N.lang] || doc.name.bn;
+    var name = doc.name[I18N.lang] || doc.name.bn || doc.name.en;
     img.src = doc.poster;
     img.alt = name;
     if (title) title.textContent = name;
@@ -431,21 +662,23 @@
   }
 
   function resolveBookingTarget(targetVal) {
-    var specs = window.SPECIALTIES || {};
+    var specs = activeSpecialties;
     if (targetVal.indexOf("doc:") === 0) {
       var docId = targetVal.slice(4);
-      var doc = (window.DOCTORS || []).find(function (d) { return d.id === docId; });
+      var doc = activeDoctors.find(function (d) { return String(d.id) === String(docId); });
       if (doc) {
         var primarySpecKey = (doc.specialties && doc.specialties[0]) || "medicine";
-        var deptEn = specs[primarySpecKey] ? specs[primarySpecKey].en : "Outpatient Consultation";
+        var deptEn = (doc.specialtyLabel && (doc.specialtyLabel.en || doc.specialtyLabel.bn))
+          || (specs[primarySpecKey] ? (specs[primarySpecKey].en || specs[primarySpecKey].bn) : "Outpatient Consultation");
         return {
           doctor_name: doc.name.en || doc.name.bn,
           department: deptEn,
           labelFor: function (lang) {
-            var spList = (doc.specialties || []).map(function (s) {
-              return specs[s] ? specs[s][lang] : s;
-            }).join(", ");
-            return (doc.name[lang] || doc.name.bn) + (spList ? " — " + spList : "");
+            var spList = (doc.specialtyLabel && (doc.specialtyLabel[lang] || doc.specialtyLabel.bn || doc.specialtyLabel.en))
+              || (doc.specialties || []).map(function (s) {
+                return specs[s] ? (specs[s][lang] || specs[s].en || specs[s].bn) : s;
+              }).join(", ");
+            return (doc.name[lang] || doc.name.bn || doc.name.en) + (spList ? " — " + spList : "");
           }
         };
       }
@@ -890,8 +1123,9 @@
     if (targetSelect) targetSelect.addEventListener("change", updateDayHint);
     if (dateInput) dateInput.addEventListener("change", updateDayHint);
 
-    // Apply initial language (Bangla by default, or saved preference)
+    // Apply initial language (Bangla by default, or saved preference), then load live doctors from Supabase
     I18N.apply();
+    loadActiveDoctorsFromSupabase();
   }
 
   if (document.readyState === "loading") {

@@ -252,6 +252,26 @@
     <!-- Main Dashboard Content -->
     <main id="dashboardMain" class="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
 
+      <!-- Dashboard Tab Switcher -->
+      <nav aria-label="Dashboard sections" class="no-print bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm inline-flex flex-wrap gap-1.5 w-full sm:w-auto" role="tablist">
+        <button id="tabAppointmentsBtn" type="button" role="tab" aria-selected="true" aria-controls="appointmentsPanel"
+                class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition bg-brand-600 text-white shadow-sm cursor-pointer">
+          <span>📋 রোগীর সিরিয়াল (Appointments)</span>
+          <span id="tabAppointmentsCount" class="rounded-full bg-white/20 px-2 py-0.5 text-xs font-extrabold">0</span>
+        </button>
+        <button id="tabDoctorsBtn" type="button" role="tab" aria-selected="false" aria-controls="doctorsPanel"
+                class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition text-slate-600 hover:bg-slate-100 cursor-pointer">
+          <span>🩺 ডাক্তার তালিকা (Manage Doctors)</span>
+          <span id="tabDoctorsCount" class="rounded-full bg-slate-200/80 text-slate-700 px-2 py-0.5 text-xs font-extrabold">0</span>
+        </button>
+      </nav>
+
+      <!-- Database / Network Alert Banner -->
+      <div id="dbErrorBanner" class="no-print hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900" role="alert"></div>
+
+      <!-- ============ TAB 1: APPOINTMENTS PANEL ============ -->
+      <div id="appointmentsPanel" role="tabpanel" aria-labelledby="tabAppointmentsBtn" class="space-y-6">
+
       <!-- Print-Only Clean Hospital Header (A4 Sheet) -->
       <header id="printHeader" class="print-only mb-4 pb-3 border-b-2 border-slate-800">
         <div class="flex items-center justify-between gap-4">
@@ -269,9 +289,6 @@
         </div>
         <p id="printMetaLine" class="mt-2 text-xs font-semibold text-slate-800"></p>
       </header>
-
-      <!-- Database / Network Alert Banner -->
-      <div id="dbErrorBanner" class="no-print hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900" role="alert"></div>
 
       <!-- Summary Counters (Click any card to quick-filter) -->
       <section aria-label="Booking summary counters" class="no-print grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
@@ -431,6 +448,103 @@
           </div>
         </div>
       </section>
+      </div><!-- /#appointmentsPanel -->
+
+      <!-- ============ TAB 2: MANAGE DOCTORS PANEL ============ -->
+      <div id="doctorsPanel" role="tabpanel" aria-labelledby="tabDoctorsBtn" class="no-print hidden space-y-6">
+
+        <!-- Doctor Summary Counters -->
+        <section aria-label="Doctor summary counters" class="grid grid-cols-3 gap-3.5 sm:gap-4">
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Total Doctors</span>
+            <p id="docCountTotal" class="mt-1.5 text-2xl sm:text-3xl font-extrabold text-slate-900">0</p>
+            <p class="mt-0.5 text-xs text-slate-400">Stored in Supabase</p>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-700">Active (On-Duty)</span>
+            <p id="docCountActive" class="mt-1.5 text-2xl sm:text-3xl font-extrabold text-emerald-600">0</p>
+            <p class="mt-0.5 text-xs text-slate-500">Visible on public website</p>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Off-Duty</span>
+            <p id="docCountOffDuty" class="mt-1.5 text-2xl sm:text-3xl font-extrabold text-slate-500">0</p>
+            <p class="mt-0.5 text-xs text-slate-400">Hidden from public booking</p>
+          </div>
+        </section>
+
+        <!-- Doctors Filter & Add Toolbar -->
+        <section class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-col lg:flex-row lg:items-center gap-3">
+            <div class="flex-1 relative">
+              <label for="docFilterSearch" class="sr-only">Search doctors</label>
+              <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"><use href="#i-search"/></svg>
+              <input id="docFilterSearch" type="search" autocomplete="off"
+                     placeholder="ডাক্তারের নাম, বিভাগ বা কক্ষ খুঁজুন (Search doctor, specialty, room)…"
+                     class="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              <select id="docFilterActive" aria-label="Filter doctors by duty status"
+                      class="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
+                <option value="all">Status: All Doctors</option>
+                <option value="active">Active (On-Duty)</option>
+                <option value="inactive">Off-Duty</option>
+              </select>
+
+              <button id="addDoctorBtn" type="button"
+                      class="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-700 active:translate-y-px text-white font-bold text-sm px-5 py-2.5 shadow-md shadow-brand-600/20 transition cursor-pointer shrink-0">
+                <span>+ নতুন ডাক্তার যোগ করুন (Add Doctor)</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <p id="doctorsResultsMeta" class="font-semibold text-slate-700" aria-live="polite">Loading doctors…</p>
+            <p>Active doctors appear immediately on the public website and serial booking dropdown.</p>
+          </div>
+        </section>
+
+        <!-- Doctors Responsive Table -->
+        <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="overflow-x-auto">
+            <table id="doctorsTable" class="w-full text-left border-collapse min-w-[860px]">
+              <thead>
+                <tr class="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <th class="py-3.5 px-3 w-12 text-center">#</th>
+                  <th class="py-3.5 px-4">Doctor &amp; Qualifications</th>
+                  <th class="py-3.5 px-4">Specialty</th>
+                  <th class="py-3.5 px-4">Visiting Schedule</th>
+                  <th class="py-3.5 px-4 w-28">Room No</th>
+                  <th class="py-3.5 px-4 w-44">Duty Status</th>
+                  <th class="py-3.5 px-4 text-right w-28">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="doctorsTbody" class="divide-y divide-slate-100 text-sm">
+                <!-- Populated dynamically by js/admin.js -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Doctors Empty State -->
+          <div id="doctorsEmptyState" class="hidden py-14 px-6 text-center">
+            <div class="mx-auto w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 grid place-items-center text-2xl" aria-hidden="true">🩺</div>
+            <h3 id="doctorsEmptyTitle" class="mt-3 text-base font-bold text-slate-800">No doctors found in database</h3>
+            <p id="doctorsEmptyDesc" class="mt-1 text-sm text-slate-500 max-w-md mx-auto">Add a doctor manually, or import the 12 existing clinic doctors to start managing schedules dynamically.</p>
+            <div class="mt-5 flex flex-wrap justify-center gap-2.5">
+              <button id="emptyAddDoctorBtn" type="button"
+                      class="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs sm:text-sm px-4 py-2.5 transition cursor-pointer">
+                <span>+ নতুন ডাক্তার যোগ করুন (Add Doctor)</span>
+              </button>
+              <button id="seedDoctorsBtn" type="button"
+                      class="hidden inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-800 font-bold text-xs sm:text-sm px-4 py-2.5 transition cursor-pointer">
+                <span>Import 12 Existing Clinic Doctors</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- /#doctorsPanel -->
+
     </main>
   </div>
 
@@ -525,14 +639,119 @@
     </form>
   </dialog>
 
-  <!-- ============ 5. DELETE CONFIRMATION MODAL ============ -->
+  <!-- ============ 5. CREATE / EDIT DOCTOR MODAL ============ -->
+  <dialog id="doctorModal" class="rounded-3xl p-0 w-full max-w-xl bg-white text-slate-800 shadow-2xl border border-slate-200">
+    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      <div>
+        <h2 id="doctorModalTitle" class="text-lg font-extrabold text-brand-950">+ নতুন ডাক্তার যোগ করুন (Add Doctor)</h2>
+        <p id="doctorModalSubtitle" class="text-xs text-slate-500">Add or edit a specialist doctor in the Supabase doctors directory</p>
+      </div>
+      <button type="button" id="doctorModalCloseBtn" class="w-9 h-9 rounded-full hover:bg-slate-100 grid place-items-center text-slate-500" aria-label="Close modal">
+        <svg class="w-5 h-5"><use href="#i-x"/></svg>
+      </button>
+    </div>
+
+    <form id="doctorModalForm" class="p-6 grid gap-4" novalidate>
+      <input type="hidden" id="dId" />
+
+      <div id="doctorModalError" class="hidden rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-semibold text-rose-800" role="alert"></div>
+
+      <div class="grid sm:grid-cols-2 gap-3.5">
+        <div>
+          <label for="dNameBn" class="block text-xs font-bold text-slate-700 mb-1">Doctor Name (বাংলা) <span class="text-delta-600">*</span></label>
+          <input id="dNameBn" type="text" required maxlength="120" placeholder="যেমন: ডা. সারমিন আকতার কেয়া"
+                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+        </div>
+        <div>
+          <label for="dNameEn" class="block text-xs font-bold text-slate-700 mb-1">Doctor Name (English) <span class="text-delta-600">*</span></label>
+          <input id="dNameEn" type="text" required maxlength="120" placeholder="e.g. Dr. Sarmin Akter Keya"
+                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+        </div>
+      </div>
+
+      <div>
+        <label for="dQualifications" class="block text-xs font-bold text-slate-700 mb-1">Qualifications &amp; Degrees</label>
+        <input id="dQualifications" type="text" maxlength="250" placeholder="e.g. MBBS (Dhaka), BCS (Health), FCPS (Gynae & Obs)"
+               class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-3.5">
+        <div>
+          <label for="dSpecialtyBn" class="block text-xs font-bold text-slate-700 mb-1">Specialty (বাংলা) <span class="text-delta-600">*</span></label>
+          <input id="dSpecialtyBn" type="text" list="specBnDatalist" required maxlength="120" placeholder="যেমন: স্ত্রী ও প্রসূতি রোগ"
+                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+          <datalist id="specBnDatalist"></datalist>
+        </div>
+        <div>
+          <label for="dSpecialtyEn" class="block text-xs font-bold text-slate-700 mb-1">Specialty (English) <span class="text-delta-600">*</span></label>
+          <input id="dSpecialtyEn" type="text" list="specEnDatalist" required maxlength="120" placeholder="e.g. Gynecology & Obstetrics"
+                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+          <datalist id="specEnDatalist"></datalist>
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-3.5">
+        <div>
+          <label for="dVisitingDays" class="block text-xs font-bold text-slate-700 mb-1">Visiting Days <span class="text-delta-600">*</span></label>
+          <input id="dVisitingDays" type="text" required maxlength="120" placeholder="e.g. Daily or Friday, Tuesday"
+                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+          <div class="mt-1.5 flex flex-wrap gap-1" id="docDayQuickBtns">
+            <button type="button" data-day-pick="Daily" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Daily</button>
+            <button type="button" data-day-pick="Saturday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Sat</button>
+            <button type="button" data-day-pick="Sunday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Sun</button>
+            <button type="button" data-day-pick="Monday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Mon</button>
+            <button type="button" data-day-pick="Tuesday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Tue</button>
+            <button type="button" data-day-pick="Wednesday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Wed</button>
+            <button type="button" data-day-pick="Thursday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Thu</button>
+            <button type="button" data-day-pick="Friday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Fri</button>
+          </div>
+        </div>
+        <div>
+          <label for="dVisitingHours" class="block text-xs font-bold text-slate-700 mb-1">Visiting Hours <span class="text-delta-600">*</span></label>
+          <input id="dVisitingHours" type="text" required maxlength="120" placeholder="e.g. 9:00 AM – 4:00 PM"
+                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-3.5 items-center">
+        <div>
+          <label for="dRoomNo" class="block text-xs font-bold text-slate-700 mb-1">Chamber / Room No</label>
+          <input id="dRoomNo" type="text" maxlength="50" placeholder="e.g. Room 201 (2nd Floor)"
+                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+        </div>
+        <div class="pt-4 sm:pt-5">
+          <label class="inline-flex items-center gap-3 cursor-pointer select-none">
+            <input id="dIsActive" type="checkbox" checked
+                   class="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" />
+            <span>
+              <span class="block text-xs font-bold text-slate-800">Active (On-Duty)</span>
+              <span class="block text-[11px] text-slate-500">Show on public website &amp; booking form</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div class="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+        <button type="button" id="doctorModalCancelBtn"
+                class="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition">
+          Cancel
+        </button>
+        <button type="submit" id="doctorModalSaveBtn"
+                class="rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-2.5 text-sm shadow-sm transition disabled:opacity-60">
+          Save Doctor
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ============ 6. DELETE CONFIRMATION MODAL ============ -->
   <dialog id="deleteModal" class="rounded-3xl p-0 w-full max-w-md bg-white text-slate-800 shadow-2xl border border-slate-200">
     <div class="p-6">
       <div class="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 grid place-items-center">
         <svg class="w-6 h-6"><use href="#i-trash"/></svg>
       </div>
-      <h2 class="mt-4 text-lg font-extrabold text-slate-900">Delete Serial Record?</h2>
-      <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">
+      <h2 id="delModalTitle" class="mt-4 text-lg font-extrabold text-slate-900">Delete Serial Record?</h2>
+      <p id="delModalDesc" class="mt-1.5 text-sm text-slate-600 leading-relaxed">
         Are you sure you want to permanently remove the serial for
         <strong id="delPatientLabel" class="text-slate-900"></strong>? This action cannot be undone.
       </p>
