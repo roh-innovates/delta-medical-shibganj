@@ -43,6 +43,102 @@
     .status-select-Confirmed { background-color: #eef7fd; color: #0a5f9c; border-color: #7cc1ed; }
     .status-select-Completed { background-color: #ecfdf5; color: #065f46; border-color: #6ee7b7; }
     .status-select-Cancelled { background-color: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+
+    .print-only { display: none; }
+
+    @page {
+      size: A4 portrait;
+      margin: 12mm;
+    }
+
+    @media print {
+      html, body {
+        background: #ffffff !important;
+        color: #000000 !important;
+        font-size: 11px !important;
+        line-height: 1.45 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      #bootLoader,
+      #loginView,
+      #adminHeader,
+      #dbErrorBanner,
+      #summarySection,
+      #toolbarSection,
+      #emptyState,
+      #toast,
+      dialog,
+      .no-print {
+        display: none !important;
+      }
+
+      .print-only {
+        display: block !important;
+      }
+      span.print-only {
+        display: inline !important;
+      }
+
+      #dashboardView:not(.hidden) {
+        display: block !important;
+        min-height: 0 !important;
+      }
+
+      #dashboardMain {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      #tableCard {
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        overflow: visible !important;
+      }
+
+      #tableScroll {
+        overflow: visible !important;
+      }
+
+      #serialTable {
+        width: 100% !important;
+        min-width: 0 !important;
+        border-collapse: collapse !important;
+        font-size: 11px !important;
+      }
+
+      #serialTable thead {
+        display: table-header-group;
+      }
+
+      #serialTable tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      #serialTable th,
+      #serialTable td {
+        border: 1px solid #94a3b8 !important;
+        padding: 6px 8px !important;
+        color: #0f172a !important;
+        background: transparent !important;
+        white-space: normal !important;
+      }
+
+      #serialTable thead th {
+        background: #f1f5f9 !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+      }
+
+      #serialTable a {
+        color: #0f172a !important;
+        text-decoration: none !important;
+      }
+    }
   </style>
 </head>
 
@@ -136,7 +232,7 @@
   <div id="dashboardView" class="hidden min-h-screen flex flex-col">
 
     <!-- Top Navigation Bar -->
-    <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
+    <header id="adminHeader" class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
         <div class="flex items-center gap-3 min-w-0">
           <img src="assets/logo.jpg" alt="" width="40" height="40" class="w-10 h-10 rounded-full ring-1 ring-slate-200 shrink-0" />
@@ -177,13 +273,20 @@
     </header>
 
     <!-- Main Dashboard Content -->
-    <main class="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+    <main id="dashboardMain" class="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+
+      <!-- Print-Only Hospital Header (A4 Paper) -->
+      <div id="printHeader" class="print-only mb-4 pb-3 border-b-2 border-slate-800 text-center">
+        <h1 class="text-lg font-extrabold text-slate-900">ডেলটা মেডিকেল সেন্টার এন্ড মা ও শিশু হাসপাতাল — রোগীর সিরিয়াল তালিকা</h1>
+        <p class="text-xs text-slate-700 mt-0.5">ওয়াটার সাপ্লাই মোড়, হাসপাতাল রোড, শিবগঞ্জ, চাঁপাইনবাবগঞ্জ | হটলাইন: ০১৭২৪-৩৬৩৮৩৮, ০১৭৯৬-৭৯৭৮৭৮</p>
+        <p id="printMeta" class="text-xs font-semibold text-slate-800 mt-1.5"></p>
+      </div>
 
       <!-- Database / Network Alert Banner -->
       <div id="dbErrorBanner" class="hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900" role="alert"></div>
 
       <!-- Summary Counters (Click any card to quick-filter) -->
-      <section aria-label="Booking summary counters" class="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+      <section id="summarySection" aria-label="Booking summary counters" class="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         <button type="button" data-quick-card="all"
                 class="text-left bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm hover:border-brand-300 transition group">
           <div class="flex items-center justify-between">
@@ -233,65 +336,81 @@
         </button>
       </section>
 
-      <!-- Search & Filter Bar -->
-      <section class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-          <!-- Search by patient name or phone -->
-          <div class="md:col-span-5 relative">
-            <label for="filterSearch" class="sr-only">Search by patient name or phone</label>
-            <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"><use href="#i-search"/></svg>
-            <input id="filterSearch" type="search" autocomplete="off"
-                   placeholder="Search patient name or phone (e.g. 017...)"
-                   class="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+      <!-- Search, Filter & Export Toolbar -->
+      <section id="toolbarSection" class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3.5">
+        <div class="flex flex-col xl:flex-row xl:items-center gap-3">
+          <!-- Search, Status & Date Filters -->
+          <div class="flex-1 grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            <!-- Search by patient name, phone, or doctor -->
+            <div class="md:col-span-5 relative">
+              <label for="filterSearch" class="sr-only">Search by patient name, phone, or doctor</label>
+              <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"><use href="#i-search"/></svg>
+              <input id="filterSearch" type="search" autocomplete="off"
+                     placeholder="Search patient name, phone, or doctor…"
+                     class="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+            </div>
+
+            <!-- Status filter -->
+            <div class="md:col-span-3">
+              <label for="filterStatus" class="sr-only">Filter by status</label>
+              <select id="filterStatus"
+                      class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
+                <option value="All">Status: All</option>
+                <option value="Pending">Pending</option>
+                <option value="Confirmed">Confirmed</option>
+                <option value="Completed">Completed</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            </div>
+
+            <!-- Date filter + Today / Clear buttons -->
+            <div class="md:col-span-4 flex items-center gap-2">
+              <label for="filterDate" class="sr-only">Filter by appointment date</label>
+              <input id="filterDate" type="date"
+                     class="flex-1 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+              <button id="filterTodayBtn" type="button"
+                      class="rounded-xl border border-slate-300 bg-slate-50 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 px-3 py-2.5 text-xs font-bold text-slate-700 transition shrink-0">
+                Today
+              </button>
+              <button id="clearFiltersBtn" type="button"
+                      class="hidden rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-3 py-2.5 text-xs font-bold text-rose-700 transition shrink-0">
+                Reset
+              </button>
+            </div>
           </div>
 
-          <!-- Status filter -->
-          <div class="md:col-span-3">
-            <label for="filterStatus" class="sr-only">Filter by status</label>
-            <select id="filterStatus"
-                    class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
-              <option value="All">Status: All</option>
-              <option value="Pending">Pending</option>
-              <option value="Confirmed">Confirmed</option>
-              <option value="Completed">Completed</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
-          </div>
-
-          <!-- Date filter + Today / Clear buttons -->
-          <div class="md:col-span-4 flex items-center gap-2">
-            <label for="filterDate" class="sr-only">Filter by appointment date</label>
-            <input id="filterDate" type="date"
-                   class="flex-1 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-            <button id="filterTodayBtn" type="button"
-                    class="rounded-xl border border-slate-300 bg-slate-50 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 px-3 py-2.5 text-xs font-bold text-slate-700 transition shrink-0">
-              Today
+          <!-- Large Receptionist Export & Print Buttons -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:flex items-center gap-2.5 shrink-0 pt-2 border-t border-slate-100 xl:pt-0 xl:border-t-0 xl:pl-3 xl:border-l xl:border-slate-200">
+            <button id="exportCsvBtn" type="button" title="Download filtered serial list as Excel / CSV"
+                    class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-sm sm:text-[15px] px-5 py-3 shadow-md shadow-emerald-600/20 transition whitespace-nowrap">
+              <span>📥 Excel / CSV ডাউনলোড</span>
             </button>
-            <button id="clearFiltersBtn" type="button"
-                    class="hidden rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-3 py-2.5 text-xs font-bold text-rose-700 transition shrink-0">
-              Reset
+            <button id="printListBtn" type="button" title="Print A4 patient serial sheet"
+                    class="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-700 hover:bg-brand-800 active:scale-[0.99] text-white font-bold text-sm sm:text-[15px] px-5 py-3 shadow-md shadow-slate-700/20 transition whitespace-nowrap">
+              <span>🖨️ প্রিন্ট লিস্ট</span>
             </button>
           </div>
         </div>
 
-        <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 pt-1">
           <p id="resultsMeta" aria-live="polite">Loading appointments…</p>
           <p>Sorted by <span class="font-semibold text-slate-700">Appointment Date ↑</span> then <span class="font-semibold text-slate-700">Booked Time ↓</span></p>
         </div>
       </section>
 
       <!-- Appointments Table -->
-      <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse min-w-[820px]">
+      <section id="tableCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div id="tableScroll" class="overflow-x-auto">
+          <table id="serialTable" class="w-full text-left border-collapse min-w-[860px]">
             <thead>
               <tr class="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <th class="py-3.5 px-3 w-12 text-center">#</th>
                 <th class="py-3.5 px-4">Patient & Phone</th>
                 <th class="py-3.5 px-4">Doctor & Department</th>
                 <th class="py-3.5 px-4">Appointment Date</th>
                 <th class="py-3.5 px-4">Reception Notes</th>
                 <th class="py-3.5 px-4 w-40">Status</th>
-                <th class="py-3.5 px-4 text-right w-28">Actions</th>
+                <th class="no-print py-3.5 px-4 text-right w-28">Actions</th>
               </tr>
             </thead>
             <tbody id="appointmentsTbody" class="divide-y divide-slate-100 text-sm">
