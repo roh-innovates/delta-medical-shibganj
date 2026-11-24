@@ -266,13 +266,95 @@
         var pName = String(row.patient_name || "").toLowerCase();
         var pPhone = toAsciiDigits(String(row.patient_phone || "")).toLowerCase();
         var docName = String(row.doctor_name || "").toLowerCase();
+        var docBn = lookupBanglaDoctorName(row.doctor_name).toLowerCase();
+        var dept = String(row.department || "").toLowerCase();
         var matchName = pName.indexOf(qRaw) !== -1;
         var matchPhone = pPhone.indexOf(qDigits) !== -1;
-        var matchDoc = docName.indexOf(qRaw) !== -1;
-        if (!matchName && !matchPhone && !matchDoc) return false;
+        var matchDoc = docName.indexOf(qRaw) !== -1 || docBn.indexOf(qRaw) !== -1;
+        var matchDept = dept.indexOf(qRaw) !== -1;
+        if (!matchName && !matchPhone && !matchDoc && !matchDept) return false;
       }
       return true;
     });
+  }
+
+  function updatePrintMeta(list) {
+    var metaEl = $("printMeta");
+    if (!metaEl) return;
+    var parts = [];
+    parts.push("তারিখ / Date: " + (filters.date ? filters.date : "সব তারিখ (All Dates)"));
+    if (filters.status !== "All") parts.push("স্ট্যাটাস / Status: " + filters.status);
+    if (filters.search.trim()) parts.push("খোঁজ / Filter: " + filters.search.trim());
+    parts.push("মোট রোগী / Total: " + list.length);
+    parts.push("প্রিন্ট: " + new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }));
+    metaEl.textContent = parts.join("  |  ");
+  }
+
+  function csvEscape(value) {
+    var str = String(value == null ? "" : value);
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+
+  function csvPhoneFormula(rawPhone) {
+    var clean = normalizePhone(rawPhone).replace(/["\r\n,]/g, "");
+    if (!clean) return '""';
+    return '="' + clean + '"';
+  }
+
+  function exportFilteredCsv() {
+    var list = getFilteredAppointments();
+    if (!list.length) {
+      window.alert("ডাউনলোড করার মতো কোনো সিরিয়াল পাওয়া যায়নি।");
+      return;
+    }
+
+    var headers = [
+      "Serial No",
+      "Patient Name",
+      "Phone Number",
+      "Doctor",
+      "Department",
+      "Date",
+      "Status",
+      "Notes"
+    ];
+
+    var lines = [headers.join(",")];
+    list.forEach(function (row, idx) {
+      lines.push([
+        String(idx + 1),
+        csvEscape(row.patient_name || ""),
+        csvPhoneFormula(row.patient_phone || ""),
+        csvEscape(row.doctor_name || ""),
+        csvEscape(row.department || ""),
+        csvEscape(row.appointment_date || ""),
+        csvEscape(row.status || "Pending"),
+        csvEscape(row.notes || "")
+      ].join(","));
+    });
+
+    // UTF-8 BOM ensures Bangla names render cleanly in Microsoft Excel
+    var csvContent = "\uFEFF" + lines.join("\r\n");
+    var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    var fileDate = filters.date || todayIso();
+    var filename = "Delta-Medical-Serials-" + fileDate + ".csv";
+
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+
+    showToast("Downloaded " + filename + " (" + list.length + " serials)");
+  }
+
+  function handlePrintList() {
+    var list = getFilteredAppointments();
+    updatePrintMeta(list);
+    window.print();
   }
 
   function syncClearButtonVisibility() {
@@ -292,6 +374,7 @@
 
     syncClearButtonVisibility();
     var list = getFilteredAppointments();
+    updatePrintMeta(list);
 
     if (meta) {
       meta.textContent =
@@ -306,7 +389,7 @@
 
     if (empty) empty.classList.add("hidden");
 
-    tbody.innerHTML = list.map(function (row) {
+    tbody.innerHTML = list.map(function (row, idx) {
       var dateInfo = formatDateBadge(row.appointment_date);
       var createdStr = formatCreatedAt(row.created_at);
       var bnSub = lookupBanglaDoctorName(row.doctor_name);
@@ -320,16 +403,19 @@
 
       return (
         '<tr class="hover:bg-slate-50/80 transition align-top">' +
+          // 0. Serial No
+          '<td class="py-3.5 px-3 text-center font-bold text-slate-500">' + (idx + 1) + "</td>" +
+
           // 1. Patient & Phone
           '<td class="py-3.5 px-4">' +
             '<p class="font-bold text-slate-900 leading-snug">' + escapeHtml(row.patient_name || "—") + "</p>" +
             '<div class="mt-1 flex items-center gap-2 text-xs">' +
               '<a href="tel:' + escapeHtml(normalizePhone(row.patient_phone)) + '" class="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline">' +
-                '<svg class="w-3.5 h-3.5"><use href="#i-phone"/></svg>' +
+                '<svg class="no-print w-3.5 h-3.5"><use href="#i-phone"/></svg>' +
                 "<span>" + escapeHtml(row.patient_phone || "—") + "</span>" +
               "</a>" +
               (waLink
-                ? '<a href="' + escapeHtml(waLink) + '" target="_blank" rel="noopener" title="Send WhatsApp update to patient" class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100">' +
+                ? '<a href="' + escapeHtml(waLink) + '" target="_blank" rel="noopener" title="Send WhatsApp update to patient" class="no-print inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100">' +
                     '<svg class="w-3.5 h-3.5"><use href="#i-wa"/></svg>' +
                   "</a>"
                 : "") +
@@ -350,30 +436,31 @@
           // 3. Appointment Date & Booked Time
           '<td class="py-3.5 px-4 whitespace-nowrap">' +
             '<div class="font-bold text-slate-900">' +
-              escapeHtml(dateInfo.label) + dateInfo.pill +
+              escapeHtml(dateInfo.label) + '<span class="no-print">' + dateInfo.pill + "</span>" +
             "</div>" +
             (dateInfo.sub ? '<p class="text-xs text-slate-500 mt-0.5">' + escapeHtml(dateInfo.sub) + "</p>" : "") +
-            (createdStr ? '<p class="text-[11px] text-slate-400 mt-0.5">Booked: ' + escapeHtml(createdStr) + "</p>" : "") +
+            (createdStr ? '<p class="no-print text-[11px] text-slate-400 mt-0.5">Booked: ' + escapeHtml(createdStr) + "</p>" : "") +
           "</td>" +
 
           // 4. Reception Notes
           '<td class="py-3.5 px-4 max-w-[220px]">' +
             (row.notes
               ? '<p class="text-xs text-slate-700 leading-relaxed break-words">' + escapeHtml(row.notes) + "</p>"
-              : '<span class="text-xs text-slate-300 italic">No notes</span>') +
+              : '<span class="no-print text-xs text-slate-300 italic">No notes</span>') +
           "</td>" +
 
-          // 5. Inline Status Select
+          // 5. Inline Status Select (interactive on screen, clean text in print)
           '<td class="py-3.5 px-4">' +
             '<label class="sr-only">Update status for ' + escapeHtml(row.patient_name) + "</label>" +
             '<select data-inline-status="' + escapeHtml(row.id) + '" ' +
-                    'class="status-select-' + currentStatus + ' w-full rounded-xl border px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition">' +
+                    'class="no-print status-select-' + currentStatus + ' w-full rounded-xl border px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition">' +
               statusOptions +
             "</select>" +
+            '<span class="print-only font-bold" data-print-status="' + escapeHtml(row.id) + '">' + escapeHtml(currentStatus) + "</span>" +
           "</td>" +
 
-          // 6. Edit & Delete Actions
-          '<td class="py-3.5 px-4 text-right whitespace-nowrap">' +
+          // 6. Edit & Delete Actions (hidden in print)
+          '<td class="no-print py-3.5 px-4 text-right whitespace-nowrap">' +
             '<div class="inline-flex items-center gap-1.5">' +
               '<button type="button" data-edit-id="' + escapeHtml(row.id) + '" title="Edit serial" ' +
                       'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-brand-50 hover:border-brand-200 text-slate-600 hover:text-brand-700 transition">' +
@@ -441,8 +528,10 @@
         }
         row.status = nextStatus;
         selectEl.className =
-          "status-select-" + nextStatus +
+          "no-print status-select-" + nextStatus +
           " w-full rounded-xl border px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition";
+        var printSpan = selectEl.parentElement && selectEl.parentElement.querySelector("[data-print-status]");
+        if (printSpan) printSpan.textContent = nextStatus;
         updateCounters();
         if (filters.status !== "All") renderTable();
         showToast("Status updated to " + nextStatus);
@@ -769,9 +858,11 @@
       pw.type = pw.type === "password" ? "text" : "password";
     });
 
-    // Top bar & Empty state buttons
+    // Top bar, Export/Print & Empty state buttons
     $("newSerialBtn").addEventListener("click", openCreateModal);
     $("emptyNewBtn").addEventListener("click", openCreateModal);
+    $("exportCsvBtn").addEventListener("click", exportFilteredCsv);
+    $("printListBtn").addEventListener("click", handlePrintList);
     $("refreshBtn").addEventListener("click", function () {
       loadAppointments(false);
     });
