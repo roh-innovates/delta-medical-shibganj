@@ -440,12 +440,18 @@
               <p id="dayHint" class="mt-2 text-sm" aria-live="polite"></p>
             </div>
 
-            <button type="submit" class="btn btn-wa btn-lg justify-center w-full">
-              <svg class="icon w-5 h-5"><use href="#i-wa"/></svg>
-              <span data-i18n="form.submit">হোয়াটসঅ্যাপে সিরিয়াল পাঠান</span>
-            </button>
-            <p id="formStatus" class="hidden text-sm text-emerald-700 bg-emerald-50 rounded-xl px-3 py-2" role="status"></p>
-            <p class="text-xs text-slate-500 text-center" data-i18n="form.privacy">আপনার তথ্য শুধুমাত্র হোয়াটসঅ্যাপ মেসেজে যাবে; এই ওয়েবসাইটে কিছুই সংরক্ষণ করা হয় না।</p>
+            <div class="grid gap-2.5 pt-1">
+              <button id="serialSubmitBtn" type="submit" class="btn btn-brand btn-lg justify-center w-full shadow-soft">
+                <svg class="icon w-5 h-5"><use href="#i-cal"/></svg>
+                <span id="serialSubmitText" data-i18n="form.submit">সিরিয়াল বুক করুন</span>
+              </button>
+              <button id="serialWaBtn" type="button" class="btn btn-wa justify-center w-full text-sm sm:text-base py-3">
+                <svg class="icon w-5 h-5"><use href="#i-wa"/></svg>
+                <span data-i18n="form.waDirect">সরাসরি হোয়াটসঅ্যাপে সিরিয়াল পাঠান</span>
+              </button>
+            </div>
+            <div id="formStatus" class="hidden" role="status" aria-live="polite"></div>
+            <p class="text-xs text-slate-500 text-center" data-i18n="form.privacy">আপনার তথ্য শুধুমাত্র হাসপাতালের সিরিয়াল বুকিংয়ের জন্য ব্যবহৃত হবে।</p>
           </div>
         </form>
       </div>
@@ -514,7 +520,10 @@
     <div class="border-t border-white/10">
       <div class="mx-auto max-w-7xl px-4 py-5 pb-24 md:pb-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-brand-300">
         <p>© <span id="year">2026</span> <span data-i18n="brand.full">ডেলটা মেডিকেল সেন্টার এন্ড মা ও শিশু হাসপাতাল</span>. <span data-i18n="footer.rights">সর্বস্বত্ব সংরক্ষিত।</span></p>
-        <a href="#home" class="inline-flex items-center gap-1 hover:text-white"><svg class="icon w-4 h-4"><use href="#i-up"/></svg><span data-i18n="footer.top">উপরে যান</span></a>
+        <div class="flex items-center gap-4">
+          <a href="admin.html" class="text-brand-300/80 hover:text-white underline-offset-4 hover:underline text-xs sm:text-sm" data-i18n="footer.admin">অ্যাডমিন লগইন</a>
+          <a href="#home" class="inline-flex items-center gap-1 hover:text-white"><svg class="icon w-4 h-4"><use href="#i-up"/></svg><span data-i18n="footer.top">উপরে যান</span></a>
+        </div>
       </div>
     </div>
   </footer>
@@ -537,6 +546,8 @@
     </div>
   </dialog>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
   <script src="js/doctors.js"></script>
   <script src="js/i18n.js"></script>
   <script src="js/main.js"></script>

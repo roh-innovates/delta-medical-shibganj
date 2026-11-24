@@ -19,14 +19,17 @@
   };
 
   var DEPARTMENTS = [
-    { id: "dept:mch",   key: "svc.mch.title" },
-    { id: "dept:gynae", key: "svc.gynae.title" },
-    { id: "dept:peds",  key: "svc.peds.title" },
-    { id: "dept:usg",   key: "svc.usg.title" },
-    { id: "dept:xray",  key: "svc.xray.title" },
-    { id: "dept:lab",   key: "svc.lab.title" },
-    { id: "dept:em",    key: "svc.em.title" }
+    { id: "dept:mch",   key: "svc.mch.title", enName: "Mother & Child Care",     defaultDoc: "Duty Doctor" },
+    { id: "dept:gynae", key: "svc.gynae.title", enName: "Gynecology & Obstetrics", defaultDoc: "Duty Doctor" },
+    { id: "dept:peds",  key: "svc.peds.title",  enName: "Pediatrics",              defaultDoc: "Duty Doctor" },
+    { id: "dept:usg",   key: "svc.usg.title",   enName: "4D Ultrasonography",      defaultDoc: "Diagnostic Unit" },
+    { id: "dept:xray",  key: "svc.xray.title",  enName: "Digital X-Ray",           defaultDoc: "Diagnostic Unit" },
+    { id: "dept:lab",   key: "svc.lab.title",   enName: "Pathology Lab",           defaultDoc: "Diagnostic Unit" },
+    { id: "dept:em",    key: "svc.em.title",    enName: "24/7 Emergency",          defaultDoc: "Duty Doctor" }
   ];
+
+  var lastFormResult = null;
+  var isSubmitting = false;
 
   function $(id) {
     return document.getElementById(id);
@@ -412,7 +415,7 @@
     }, 450);
   }
 
-  /* ------------ Serial Form Validation & WhatsApp Redirect ------------ */
+  /* ------------ Serial Form Validation, Supabase Insert & WhatsApp ------------ */
   function normalizeBdPhone(raw) {
     var ascii = I18N.toAscii(raw || "").replace(/[\s\-().]/g, "");
     if (ascii.indexOf("+880") === 0) ascii = "0" + ascii.slice(4);
@@ -427,13 +430,77 @@
     else errEl.setAttribute("hidden", "");
   }
 
-  function handleSerialSubmit(e) {
-    e.preventDefault();
+  function resolveBookingTarget(targetVal) {
+    var specs = window.SPECIALTIES || {};
+    if (targetVal.indexOf("doc:") === 0) {
+      var docId = targetVal.slice(4);
+      var doc = (window.DOCTORS || []).find(function (d) { return d.id === docId; });
+      if (doc) {
+        var primarySpecKey = (doc.specialties && doc.specialties[0]) || "medicine";
+        var deptEn = specs[primarySpecKey] ? specs[primarySpecKey].en : "Outpatient Consultation";
+        return {
+          doctor_name: doc.name.en || doc.name.bn,
+          department: deptEn,
+          labelFor: function (lang) {
+            var spList = (doc.specialties || []).map(function (s) {
+              return specs[s] ? specs[s][lang] : s;
+            }).join(", ");
+            return (doc.name[lang] || doc.name.bn) + (spList ? " — " + spList : "");
+          }
+        };
+      }
+    }
+
+    var deptObj = DEPARTMENTS.find(function (d) { return d.id === targetVal; });
+    if (deptObj) {
+      return {
+        doctor_name: deptObj.defaultDoc,
+        department: deptObj.enName,
+        labelFor: function () {
+          return I18N.t(deptObj.key);
+        }
+      };
+    }
+
+    return {
+      doctor_name: "Duty Doctor",
+      department: targetVal,
+      labelFor: function () { return targetVal; }
+    };
+  }
+
+  function formatBookingDateDisplay(dateVal) {
+    var parts = dateVal.split("-");
+    var dt = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+    var dayKey = JS_DAY_TO_KEY[dt.getDay()];
+    var dayName = (window.DAY_LABELS && window.DAY_LABELS[dayKey])
+      ? window.DAY_LABELS[dayKey][I18N.lang]
+      : "";
+    return I18N.num(dateVal) + (dayName ? " (" + dayName + ")" : "");
+  }
+
+  function buildWhatsAppUrl(booking) {
+    var targetText = booking.resolved.labelFor(I18N.lang);
+    var dateDisplay = formatBookingDateDisplay(booking.dateVal);
+    var lines = [
+      I18N.t("wa.greet"),
+      I18N.t("wa.intro"),
+      "",
+      "• " + I18N.t("wa.name") + ": " + booking.name,
+      "• " + I18N.t("wa.phone") + ": " + booking.phone,
+      "• " + I18N.t("wa.target") + ": " + targetText,
+      "• " + I18N.t("wa.date") + ": " + dateDisplay,
+      "",
+      I18N.t("wa.end")
+    ];
+    return "https://wa.me/" + WA_NUMBER + "?text=" + encodeURIComponent(lines.join("\n"));
+  }
+
+  function validateAndExtractBooking() {
     var nameInput = $("fName");
     var phoneInput = $("fPhone");
     var targetSelect = $("fTarget");
     var dateInput = $("fDate");
-    var statusEl = $("formStatus");
 
     var name = (nameInput.value || "").trim();
     var phone = normalizeBdPhone(phoneInput.value);
@@ -458,40 +525,181 @@
         errDate && dateInput
       ].find(Boolean);
       if (firstInvalid) firstInvalid.focus();
+      return null;
+    }
+
+    var resolved = resolveBookingTarget(targetVal);
+    return {
+      name: name,
+      phone: phone,
+      targetVal: targetVal,
+      dateVal: dateVal,
+      doctor_name: resolved.doctor_name,
+      department: resolved.department,
+      resolved: resolved
+    };
+  }
+
+  function renderFormStatus() {
+    var statusEl = $("formStatus");
+    if (!statusEl) return;
+    if (!lastFormResult) {
+      statusEl.innerHTML = "";
+      statusEl.className = "hidden";
       return;
     }
 
-    var selectedOption = targetSelect.options[targetSelect.selectedIndex];
-    var targetText = selectedOption ? selectedOption.textContent : targetVal;
+    var booking = lastFormResult.booking;
+    var waUrl = buildWhatsAppUrl(booking);
+    var summaryText = I18N.t("form.successSummary", {
+      target: booking.resolved.labelFor(I18N.lang),
+      date: formatBookingDateDisplay(booking.dateVal)
+    });
 
-    var parts = dateVal.split("-");
-    var dt = new Date(+parts[0], +parts[1] - 1, +parts[2]);
-    var dayKey = JS_DAY_TO_KEY[dt.getDay()];
-    var dayName = (window.DAY_LABELS && window.DAY_LABELS[dayKey])
-      ? window.DAY_LABELS[dayKey][I18N.lang]
-      : "";
-    var dateDisplay = I18N.num(dateVal) + (dayName ? " (" + dayName + ")" : "");
-
-    var lines = [
-      I18N.t("wa.greet"),
-      I18N.t("wa.intro"),
-      "",
-      "• " + I18N.t("wa.name") + ": " + name,
-      "• " + I18N.t("wa.phone") + ": " + phone,
-      "• " + I18N.t("wa.target") + ": " + targetText,
-      "• " + I18N.t("wa.date") + ": " + dateDisplay,
-      "",
-      I18N.t("wa.end")
-    ];
-
-    var waUrl = "https://wa.me/" + WA_NUMBER + "?text=" + encodeURIComponent(lines.join("\n"));
-
-    if (statusEl) {
-      statusEl.textContent = I18N.t("form.sent");
-      statusEl.classList.remove("hidden");
+    if (lastFormResult.type === "success") {
+      statusEl.className = "rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 text-emerald-950 shadow-sm";
+      statusEl.innerHTML =
+        '<div class="flex items-start gap-3">' +
+          '<span class="w-8 h-8 rounded-full bg-emerald-600 text-white grid place-items-center shrink-0 mt-0.5">' +
+            '<svg class="icon w-4 h-4"><use href="#i-check"/></svg>' +
+          "</span>" +
+          '<div class="min-w-0 flex-1">' +
+            '<p class="font-bold text-emerald-900 text-base">' + escapeHtml(I18N.t("form.successTitle")) + "</p>" +
+            '<p class="mt-1 text-sm text-emerald-800 leading-relaxed">' +
+              escapeHtml(I18N.t("form.successBody", { name: booking.name })) +
+            "</p>" +
+            '<p class="mt-2 inline-block text-xs font-semibold bg-white/80 border border-emerald-200 text-emerald-900 rounded-lg px-2.5 py-1">' +
+              escapeHtml(summaryText) +
+            "</p>" +
+            '<div class="mt-3.5 flex flex-col sm:flex-row sm:items-center gap-2.5">' +
+              '<a href="' + escapeHtml(waUrl) + '" target="_blank" rel="noopener" class="btn btn-wa justify-center text-sm py-2.5 flex-1">' +
+                '<svg class="icon w-4 h-4"><use href="#i-wa"/></svg>' +
+                "<span>" + escapeHtml(I18N.t("form.successWaBtn")) + "</span>" +
+              "</a>" +
+              '<button type="button" data-reset-serial class="btn btn-outline justify-center text-xs sm:text-sm py-2.5">' +
+                escapeHtml(I18N.t("form.bookAnother")) +
+              "</button>" +
+            "</div>" +
+          "</div>" +
+        "</div>";
+    } else {
+      statusEl.className = "rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-sm";
+      statusEl.innerHTML =
+        '<div class="flex items-start gap-3">' +
+          '<span class="w-8 h-8 rounded-full bg-amber-500 text-white grid place-items-center shrink-0 mt-0.5">' +
+            '<svg class="icon w-4 h-4"><use href="#i-info"/></svg>' +
+          "</span>" +
+          '<div class="min-w-0 flex-1">' +
+            '<p class="font-bold text-amber-900 text-base">' + escapeHtml(I18N.t("form.dbErrorTitle")) + "</p>" +
+            '<p class="mt-1 text-sm text-amber-800 leading-relaxed">' +
+              escapeHtml(I18N.t("form.dbErrorBody", { reason: lastFormResult.reason || "Network error" })) +
+            "</p>" +
+            '<div class="mt-3 flex flex-wrap gap-2">' +
+              '<a href="' + escapeHtml(waUrl) + '" target="_blank" rel="noopener" class="btn btn-wa justify-center text-sm py-2.5 flex-1">' +
+                '<svg class="icon w-4 h-4"><use href="#i-wa"/></svg>' +
+                "<span>" + escapeHtml(I18N.t("form.waDirect")) + "</span>" +
+              "</a>" +
+            "</div>" +
+          "</div>" +
+        "</div>";
     }
+  }
 
+  function setSubmittingState(busy) {
+    isSubmitting = busy;
+    var submitBtn = $("serialSubmitBtn");
+    var submitText = $("serialSubmitText");
+    var waBtn = $("serialWaBtn");
+    if (submitBtn) submitBtn.disabled = busy;
+    if (waBtn) waBtn.disabled = busy;
+    if (submitText) {
+      submitText.textContent = busy ? I18N.t("form.submitSaving") : I18N.t("form.submit");
+    }
+  }
+
+  function insertAppointmentToSupabase(booking) {
+    if (!window.supabaseClient) {
+      return Promise.resolve({ error: { message: "Supabase client unavailable" } });
+    }
+    return window.supabaseClient
+      .from("appointments")
+      .insert([{
+        patient_name: booking.name,
+        patient_phone: booking.phone,
+        doctor_name: booking.doctor_name,
+        department: booking.department,
+        appointment_date: booking.dateVal,
+        status: "Pending"
+      }]);
+  }
+
+  function handleSerialSubmit(e) {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    var booking = validateAndExtractBooking();
+    if (!booking) return;
+
+    setSubmittingState(true);
+    insertAppointmentToSupabase(booking)
+      .then(function (res) {
+        if (res && res.error) {
+          lastFormResult = {
+            type: "error",
+            booking: booking,
+            reason: res.error.message || "Database error"
+          };
+        } else {
+          lastFormResult = {
+            type: "success",
+            booking: booking
+          };
+          var nameInput = $("fName");
+          var phoneInput = $("fPhone");
+          if (nameInput) nameInput.value = "";
+          if (phoneInput) phoneInput.value = "";
+        }
+        renderFormStatus();
+      })
+      .catch(function (err) {
+        lastFormResult = {
+          type: "error",
+          booking: booking,
+          reason: (err && err.message) || "Connection failed"
+        };
+        renderFormStatus();
+      })
+      .finally(function () {
+        setSubmittingState(false);
+      });
+  }
+
+  function handleDirectWhatsApp() {
+    if (isSubmitting) return;
+    var booking = validateAndExtractBooking();
+    if (!booking) return;
+
+    // Open WhatsApp synchronously in click gesture to avoid mobile popup blockers
+    var waUrl = buildWhatsAppUrl(booking);
     window.open(waUrl, "_blank", "noopener");
+
+    // Also log the serial in Supabase so reception sees it in admin.html
+    setSubmittingState(true);
+    insertAppointmentToSupabase(booking)
+      .then(function (res) {
+        if (!res || !res.error) {
+          lastFormResult = { type: "success", booking: booking };
+          var nameInput = $("fName");
+          var phoneInput = $("fPhone");
+          if (nameInput) nameInput.value = "";
+          if (phoneInput) phoneInput.value = "";
+          renderFormStatus();
+        }
+      })
+      .catch(function () { /* WhatsApp already opened */ })
+      .finally(function () {
+        setSubmittingState(false);
+      });
   }
 
   /* ------------ Boot & Event Wiring ------------ */
@@ -519,6 +727,11 @@
       renderDoctors();
       renderFormTargetOptions();
       updateDayHint();
+      renderFormStatus();
+      if (isSubmitting) {
+        var submitText = $("serialSubmitText");
+        if (submitText) submitText.textContent = I18N.t("form.submitSaving");
+      }
     });
 
     // Search input
@@ -593,6 +806,15 @@
       if (serialLink) {
         e.preventDefault();
         selectSerialTarget(serialLink.getAttribute("data-serial-target"));
+        return;
+      }
+
+      var resetSerialBtn = e.target.closest("[data-reset-serial]");
+      if (resetSerialBtn) {
+        lastFormResult = null;
+        renderFormStatus();
+        var nameInput = $("fName");
+        if (nameInput) nameInput.focus();
       }
     });
 
@@ -659,6 +881,10 @@
     var form = $("serialForm");
     if (form) {
       form.addEventListener("submit", handleSerialSubmit);
+    }
+    var waDirectBtn = $("serialWaBtn");
+    if (waDirectBtn) {
+      waDirectBtn.addEventListener("click", handleDirectWhatsApp);
     }
     var targetSelect = $("fTarget");
     if (targetSelect) targetSelect.addEventListener("change", updateDayHint);
