@@ -24,6 +24,7 @@
   var appointments = [];
   var filters = {
     search: "",
+    doctor: "All",
     status: "All",
     date: ""
   };
@@ -77,9 +78,9 @@
     var today = todayIso();
     var pill = "";
     if (isoDate === today) {
-      pill = '<span class="inline-block rounded-md bg-brand-100 text-brand-800 text-[10px] font-bold px-1.5 py-0.5 ml-1.5">TODAY</span>';
+      pill = '<span class="no-print inline-block rounded-md bg-brand-100 text-brand-800 text-[10px] font-bold px-1.5 py-0.5 ml-1.5">TODAY</span>';
     } else if (isoDate < today) {
-      pill = '<span class="inline-block rounded-md bg-slate-100 text-slate-500 text-[10px] font-semibold px-1.5 py-0.5 ml-1.5">Past</span>';
+      pill = '<span class="no-print inline-block rounded-md bg-slate-100 text-slate-500 text-[10px] font-semibold px-1.5 py-0.5 ml-1.5">Past</span>';
     }
 
     return {
@@ -251,11 +252,43 @@
     if (todayLbl) todayLbl.textContent = "Date: " + today;
   }
 
+  function populateDoctorFilter() {
+    var docSelect = $("filterDoctor");
+    if (!docSelect) return;
+    var prev = filters.doctor || "All";
+    var names = [];
+
+    (window.DOCTORS || []).forEach(function (d) {
+      if (d.name && d.name.en && names.indexOf(d.name.en) === -1) {
+        names.push(d.name.en);
+      }
+    });
+    ["Duty Doctor", "Diagnostic Unit"].forEach(function (n) {
+      if (names.indexOf(n) === -1) names.push(n);
+    });
+    appointments.forEach(function (r) {
+      var dn = (r.doctor_name || "").trim();
+      if (dn && names.indexOf(dn) === -1) names.push(dn);
+    });
+
+    var html = '<option value="All">Doctor: All</option>';
+    names.forEach(function (name) {
+      var bn = lookupBanglaDoctorName(name);
+      var label = bn ? name + " (" + bn + ")" : name;
+      var sel = name === prev ? " selected" : "";
+      html += '<option value="' + escapeHtml(name) + '"' + sel + ">" + escapeHtml(label) + "</option>";
+    });
+    docSelect.innerHTML = html;
+  }
+
   function getFilteredAppointments() {
     var qRaw = filters.search.trim().toLowerCase();
     var qDigits = toAsciiDigits(qRaw);
 
     return appointments.filter(function (row) {
+      if (filters.doctor !== "All" && (row.doctor_name || "") !== filters.doctor) {
+        return false;
+      }
       if (filters.status !== "All" && row.status !== filters.status) {
         return false;
       }
@@ -266,104 +299,40 @@
         var pName = String(row.patient_name || "").toLowerCase();
         var pPhone = toAsciiDigits(String(row.patient_phone || "")).toLowerCase();
         var docName = String(row.doctor_name || "").toLowerCase();
-        var docBn = lookupBanglaDoctorName(row.doctor_name).toLowerCase();
-        var dept = String(row.department || "").toLowerCase();
         var matchName = pName.indexOf(qRaw) !== -1;
         var matchPhone = pPhone.indexOf(qDigits) !== -1;
-        var matchDoc = docName.indexOf(qRaw) !== -1 || docBn.indexOf(qRaw) !== -1;
-        var matchDept = dept.indexOf(qRaw) !== -1;
-        if (!matchName && !matchPhone && !matchDoc && !matchDept) return false;
+        var matchDoc = docName.indexOf(qRaw) !== -1;
+        if (!matchName && !matchPhone && !matchDoc) return false;
       }
       return true;
     });
   }
 
-  function updatePrintMeta(list) {
-    var metaEl = $("printMeta");
-    if (!metaEl) return;
-    var parts = [];
-    parts.push("তারিখ / Date: " + (filters.date ? filters.date : "সব তারিখ (All Dates)"));
-    if (filters.status !== "All") parts.push("স্ট্যাটাস / Status: " + filters.status);
-    if (filters.search.trim()) parts.push("খোঁজ / Filter: " + filters.search.trim());
-    parts.push("মোট রোগী / Total: " + list.length);
-    parts.push("প্রিন্ট: " + new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }));
-    metaEl.textContent = parts.join("  |  ");
-  }
-
-  function csvEscape(value) {
-    var str = String(value == null ? "" : value);
-    return '"' + str.replace(/"/g, '""') + '"';
-  }
-
-  function csvPhoneFormula(rawPhone) {
-    var clean = normalizePhone(rawPhone).replace(/["\r\n,]/g, "");
-    if (!clean) return '""';
-    return '="' + clean + '"';
-  }
-
-  function exportFilteredCsv() {
-    var list = getFilteredAppointments();
-    if (!list.length) {
-      window.alert("ডাউনলোড করার মতো কোনো সিরিয়াল পাওয়া যায়নি।");
-      return;
-    }
-
-    var headers = [
-      "Serial No",
-      "Patient Name",
-      "Phone Number",
-      "Doctor",
-      "Department",
-      "Date",
-      "Status",
-      "Notes"
-    ];
-
-    var lines = [headers.join(",")];
-    list.forEach(function (row, idx) {
-      lines.push([
-        String(idx + 1),
-        csvEscape(row.patient_name || ""),
-        csvPhoneFormula(row.patient_phone || ""),
-        csvEscape(row.doctor_name || ""),
-        csvEscape(row.department || ""),
-        csvEscape(row.appointment_date || ""),
-        csvEscape(row.status || "Pending"),
-        csvEscape(row.notes || "")
-      ].join(","));
-    });
-
-    // UTF-8 BOM ensures Bangla names render cleanly in Microsoft Excel
-    var csvContent = "\uFEFF" + lines.join("\r\n");
-    var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    var fileDate = filters.date || todayIso();
-    var filename = "Delta-Medical-Serials-" + fileDate + ".csv";
-
-    var url = URL.createObjectURL(blob);
-    var link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-
-    showToast("Downloaded " + filename + " (" + list.length + " serials)");
-  }
-
-  function handlePrintList() {
-    var list = getFilteredAppointments();
-    updatePrintMeta(list);
-    window.print();
-  }
-
   function syncClearButtonVisibility() {
     var hasFilter =
       filters.search.trim() !== "" ||
+      filters.doctor !== "All" ||
       filters.status !== "All" ||
       filters.date !== "";
     var clearBtn = $("clearFiltersBtn");
     if (clearBtn) clearBtn.classList.toggle("hidden", !hasFilter);
+  }
+
+  function updatePrintHeaderMeta(list) {
+    var metaEl = $("printMetaLine");
+    if (!metaEl) return;
+    var parts = [];
+    parts.push("তারিখ (Date): " + (filters.date || "সকল তারিখ / All Dates"));
+    if (filters.doctor !== "All") {
+      var bnDoc = lookupBanglaDoctorName(filters.doctor);
+      parts.push("ডাক্তার: " + (bnDoc ? bnDoc + " (" + filters.doctor + ")" : filters.doctor));
+    }
+    if (filters.status !== "All") {
+      parts.push("স্ট্যাটাস: " + filters.status);
+    }
+    parts.push("মোট রোগী (Total): " + list.length);
+    parts.push("প্রিন্ট সময়: " + new Date().toLocaleString("en-GB"));
+    metaEl.textContent = parts.join("  |  ");
   }
 
   function renderTable() {
@@ -374,7 +343,7 @@
 
     syncClearButtonVisibility();
     var list = getFilteredAppointments();
-    updatePrintMeta(list);
+    updatePrintHeaderMeta(list);
 
     if (meta) {
       meta.textContent =
@@ -390,6 +359,7 @@
     if (empty) empty.classList.add("hidden");
 
     tbody.innerHTML = list.map(function (row, idx) {
+      var serialNo = idx + 1;
       var dateInfo = formatDateBadge(row.appointment_date);
       var createdStr = formatCreatedAt(row.created_at);
       var bnSub = lookupBanglaDoctorName(row.doctor_name);
@@ -403,8 +373,10 @@
 
       return (
         '<tr class="hover:bg-slate-50/80 transition align-top">' +
-          // 0. Serial No
-          '<td class="py-3.5 px-3 text-center font-bold text-slate-500">' + (idx + 1) + "</td>" +
+          // 0. Serial No (#)
+          '<td class="py-3.5 px-3 text-center font-extrabold text-slate-600">' +
+            serialNo +
+          "</td>" +
 
           // 1. Patient & Phone
           '<td class="py-3.5 px-4">' +
@@ -436,7 +408,7 @@
           // 3. Appointment Date & Booked Time
           '<td class="py-3.5 px-4 whitespace-nowrap">' +
             '<div class="font-bold text-slate-900">' +
-              escapeHtml(dateInfo.label) + '<span class="no-print">' + dateInfo.pill + "</span>" +
+              escapeHtml(dateInfo.label) + dateInfo.pill +
             "</div>" +
             (dateInfo.sub ? '<p class="text-xs text-slate-500 mt-0.5">' + escapeHtml(dateInfo.sub) + "</p>" : "") +
             (createdStr ? '<p class="no-print text-[11px] text-slate-400 mt-0.5">Booked: ' + escapeHtml(createdStr) + "</p>" : "") +
@@ -449,17 +421,17 @@
               : '<span class="no-print text-xs text-slate-300 italic">No notes</span>') +
           "</td>" +
 
-          // 5. Inline Status Select (interactive on screen, clean text in print)
+          // 5. Inline Status Select (Screen) + Plain Text Status (Print)
           '<td class="py-3.5 px-4">' +
+            '<span class="print-only font-semibold">' + escapeHtml(currentStatus) + "</span>" +
             '<label class="sr-only">Update status for ' + escapeHtml(row.patient_name) + "</label>" +
             '<select data-inline-status="' + escapeHtml(row.id) + '" ' +
                     'class="no-print status-select-' + currentStatus + ' w-full rounded-xl border px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition">' +
               statusOptions +
             "</select>" +
-            '<span class="print-only font-bold" data-print-status="' + escapeHtml(row.id) + '">' + escapeHtml(currentStatus) + "</span>" +
           "</td>" +
 
-          // 6. Edit & Delete Actions (hidden in print)
+          // 6. Edit & Delete Actions (Hidden on Print)
           '<td class="no-print py-3.5 px-4 text-right whitespace-nowrap">' +
             '<div class="inline-flex items-center gap-1.5">' +
               '<button type="button" data-edit-id="' + escapeHtml(row.id) + '" title="Edit serial" ' +
@@ -475,6 +447,89 @@
         "</tr>"
       );
     }).join("");
+  }
+
+  /* ------------ CSV / Excel Export & Print Sheet ------------ */
+  function csvCell(val) {
+    var s = String(val == null ? "" : val).replace(/\r?\n/g, " ").trim();
+    // Prevent accidental Excel formula execution on user-supplied text
+    if (/^[=+\-@]/.test(s)) {
+      s = " " + s;
+    }
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+
+  function csvPhoneFormula(rawPhone) {
+    var normalized = normalizePhone(rawPhone);
+    var safe = (normalized || String(rawPhone || "")).replace(/["\r\n,]/g, "").trim();
+    if (!safe) return '""';
+    // Excel formula literal ="017XXXXXXXX" preserves the leading zero cleanly
+    return '="' + safe + '"';
+  }
+
+  function exportFilteredToCsv() {
+    var list = getFilteredAppointments();
+    if (!list.length) {
+      window.alert("ডাউনলোড করার মতো কোনো সিরিয়াল পাওয়া যায়নি।");
+      return;
+    }
+
+    var headers = [
+      "Serial No",
+      "Patient Name",
+      "Phone Number",
+      "Doctor",
+      "Department",
+      "Date",
+      "Status",
+      "Notes"
+    ];
+
+    var lines = [headers.join(",")];
+
+    list.forEach(function (row, idx) {
+      var bnDoc = lookupBanglaDoctorName(row.doctor_name);
+      var doctorDisplay = bnDoc
+        ? row.doctor_name + " (" + bnDoc + ")"
+        : (row.doctor_name || "");
+
+      lines.push([
+        String(idx + 1),
+        csvCell(row.patient_name),
+        csvPhoneFormula(row.patient_phone),
+        csvCell(doctorDisplay),
+        csvCell(row.department),
+        csvCell(row.appointment_date),
+        csvCell(row.status || "Pending"),
+        csvCell(row.notes || "")
+      ].join(","));
+    });
+
+    // Prepend UTF-8 BOM (\uFEFF) so Bangla names open cleanly in Microsoft Excel
+    var csvContent = "\uFEFF" + lines.join("\r\n");
+    var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob);
+
+    var fileDate = filters.date || todayIso();
+    var filename = "Delta-Medical-Serials-" + fileDate + ".csv";
+
+    var link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
+
+    showToast("Downloaded " + list.length + " serial(s) to " + filename);
+  }
+
+  function handlePrintList() {
+    var list = getFilteredAppointments();
+    updatePrintHeaderMeta(list);
+    window.print();
   }
 
   /* ------------ Supabase CRUD Operations ------------ */
@@ -495,6 +550,7 @@
         }
         setDbError("");
         appointments = Array.isArray(res.data) ? res.data : [];
+        populateDoctorFilter();
         updateCounters();
         renderTable();
       })
@@ -530,7 +586,7 @@
         selectEl.className =
           "no-print status-select-" + nextStatus +
           " w-full rounded-xl border px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition";
-        var printSpan = selectEl.parentElement && selectEl.parentElement.querySelector("[data-print-status]");
+        var printSpan = selectEl.parentElement && selectEl.parentElement.querySelector("span.print-only");
         if (printSpan) printSpan.textContent = nextStatus;
         updateCounters();
         if (filters.status !== "All") renderTable();
@@ -849,6 +905,7 @@
     }
 
     populateModalPresets();
+    populateDoctorFilter();
 
     // Auth events
     $("loginForm").addEventListener("submit", handleLoginSubmit);
@@ -858,18 +915,24 @@
       pw.type = pw.type === "password" ? "text" : "password";
     });
 
-    // Top bar, Export/Print & Empty state buttons
+    // Top bar & Empty state buttons
     $("newSerialBtn").addEventListener("click", openCreateModal);
     $("emptyNewBtn").addEventListener("click", openCreateModal);
-    $("exportCsvBtn").addEventListener("click", exportFilteredCsv);
-    $("printListBtn").addEventListener("click", handlePrintList);
     $("refreshBtn").addEventListener("click", function () {
       loadAppointments(false);
     });
 
+    // Export CSV & Print Sheet buttons
+    $("exportCsvBtn").addEventListener("click", exportFilteredToCsv);
+    $("printSheetBtn").addEventListener("click", handlePrintList);
+
     // Filters
     $("filterSearch").addEventListener("input", function (e) {
       filters.search = e.target.value || "";
+      renderTable();
+    });
+    $("filterDoctor").addEventListener("change", function (e) {
+      filters.doctor = e.target.value || "All";
       renderTable();
     });
     $("filterStatus").addEventListener("change", function (e) {
@@ -888,9 +951,11 @@
     });
     $("clearFiltersBtn").addEventListener("click", function () {
       filters.search = "";
+      filters.doctor = "All";
       filters.status = "All";
       filters.date = "";
       $("filterSearch").value = "";
+      $("filterDoctor").value = "All";
       $("filterStatus").value = "All";
       $("filterDate").value = "";
       renderTable();
