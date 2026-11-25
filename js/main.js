@@ -315,27 +315,27 @@
     if (fabDot && fabLabel) {
       if (runningDocs.length > 0) {
         fabDot.innerHTML =
-          '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-85"></span>' +
-          '<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>';
+          '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-90"></span>' +
+          '<span class="relative inline-flex rounded-full h-2 w-2 sm:h-2.5 sm:w-2.5 bg-emerald-400"></span>';
         if (fabBtn) {
           fabBtn.classList.add("live-fab--live");
         }
         if (runningDocs.length === 1) {
           fabLabel.innerHTML =
-            '<span>চলমান</span> <span class="rounded-full bg-white text-emerald-700 font-extrabold px-2 py-0.5 text-[11px] leading-none">' +
+            '<span class="text-white">চলমান</span> <span class="rounded-full bg-emerald-400 text-emerald-950 font-extrabold px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] leading-none">' +
             escapeHtml(formatSerialCode(runningDocs[0].current_serial)) +
             "</span>";
         } else {
           fabLabel.innerHTML =
-            "<span>" + escapeHtml(I18N.t("queue.fabIdle")) + "</span> " +
-            '<span class="rounded-full bg-white text-emerald-700 font-extrabold px-2 py-0.5 text-[11px] leading-none">' +
+            '<span class="text-white">' + escapeHtml(I18N.t("queue.fabIdle")) + "</span> " +
+            '<span class="rounded-full bg-emerald-400 text-emerald-950 font-extrabold px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] leading-none">' +
             escapeHtml(I18N.num(runningDocs.length)) +
             "</span>";
         }
       } else {
         fabDot.innerHTML =
-          '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75"></span>' +
-          '<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-200"></span>';
+          '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>' +
+          '<span class="relative inline-flex rounded-full h-2 w-2 sm:h-2.5 sm:w-2.5 bg-emerald-400"></span>';
         if (fabBtn) {
           fabBtn.classList.remove("live-fab--live");
         }
