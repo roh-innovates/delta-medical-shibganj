@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="overflow-x-hidden max-w-full">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Reception & Admin Dashboard | Delta Medical Center, Shibganj</title>
   <meta name="robots" content="noindex, nofollow" />
   <meta name="theme-color" content="#0b77c2" />
@@ -35,9 +35,11 @@
   </script>
 
   <style>
+    dialog:not([open]) {
+      display: none !important;
+    }
     dialog::backdrop {
-      background: rgba(11, 42, 70, 0.65);
-      backdrop-filter: blur(4px);
+      background: transparent;
     }
     .status-select-Pending   { background-color: #fffbeb; color: #92400e; border-color: #fcd34d; }
     .status-select-Confirmed { background-color: #eef7fd; color: #0a5f9c; border-color: #7cc1ed; }
@@ -119,7 +121,7 @@
   </style>
 </head>
 
-<body class="min-h-screen bg-slate-50 text-slate-800 font-sans antialiased">
+<body class="min-h-screen overflow-x-hidden max-w-full bg-slate-50 text-slate-800 font-sans antialiased">
 
   <!-- ============ SVG ICON SPRITE ============ -->
   <svg xmlns="http://www.w3.org/2000/svg" class="hidden" aria-hidden="true">
@@ -149,11 +151,11 @@
   </div>
 
   <!-- ============ 1. LOGIN GATE VIEW ============ -->
-  <main id="loginView" class="hidden min-h-screen flex flex-col justify-center py-10 px-4 bg-gradient-to-br from-brand-950 via-brand-900 to-slate-900">
-    <div class="mx-auto w-full max-w-md">
-      <div class="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 border border-slate-100">
-        <div class="flex items-center gap-3.5 pb-5 border-b border-slate-100">
-          <img src="assets/logo.jpg" alt="Delta Medical Center" width="52" height="52" class="w-13 h-13 rounded-full ring-2 ring-brand-100 shrink-0" />
+  <main id="loginView" class="hidden min-h-screen w-full max-w-full min-w-0 flex flex-col justify-center py-8 px-3 sm:px-4 bg-gradient-to-br from-brand-950 via-brand-900 to-slate-900">
+    <div class="mx-auto w-full max-w-md min-w-0">
+      <div class="bg-white rounded-2xl sm:rounded-3xl shadow-2xl p-5 sm:p-8 border border-slate-100">
+        <div class="flex items-center gap-3 pb-5 border-b border-slate-100 min-w-0">
+          <img src="assets/logo.jpg" alt="Delta Medical Center" width="52" height="52" class="w-12 h-12 rounded-full ring-2 ring-brand-100 shrink-0" />
           <div class="min-w-0">
             <p class="text-xs font-bold uppercase tracking-wider text-brand-600">Reception & Admin Portal</p>
             <h1 class="text-lg font-extrabold text-brand-950 leading-tight truncate">ডেলটা মেডিকেল সেন্টার</h1>
@@ -176,7 +178,7 @@
             <label for="loginEmail" class="block text-sm font-semibold text-slate-700 mb-1.5">Email address</label>
             <input id="loginEmail" name="email" type="email" autocomplete="email" required
                    placeholder="reception@deltamedical.com"
-                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base text-slate-900 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
           </div>
 
           <div>
@@ -184,7 +186,7 @@
             <div class="relative">
               <input id="loginPassword" name="password" type="password" autocomplete="current-password" required
                      placeholder="••••••••"
-                     class="w-full rounded-xl border border-slate-300 pl-3.5 pr-10 py-2.5 text-sm text-slate-900 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+                     class="w-full rounded-xl border border-slate-300 pl-3.5 pr-10 py-2.5 text-base text-slate-900 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
               <button type="button" id="togglePasswordBtn" class="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600" aria-label="Show or hide password">
                 <svg class="w-4 h-4"><use href="#i-eye"/></svg>
               </button>
@@ -192,12 +194,12 @@
           </div>
 
           <button id="loginSubmitBtn" type="submit"
-                  class="mt-1 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-4 text-sm shadow-lg shadow-brand-600/25 transition disabled:opacity-60 disabled:cursor-not-allowed">
+                  class="mt-1 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-4 text-base sm:text-sm shadow-lg shadow-brand-600/25 transition disabled:opacity-60 disabled:cursor-not-allowed">
             <span id="loginSubmitText">Sign In to Dashboard</span>
           </button>
         </form>
 
-        <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+        <div class="mt-6 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <a href="index.html" class="font-semibold text-brand-700 hover:underline">← Back to Clinic Website</a>
           <span>Shibganj, Chapainawabganj</span>
         </div>
@@ -206,42 +208,43 @@
   </main>
 
   <!-- ============ 2. AUTHENTICATED CRUD DASHBOARD VIEW ============ -->
-  <div id="dashboardView" class="hidden min-h-screen flex flex-col">
+  <div id="dashboardView" class="hidden min-h-screen w-full max-w-full min-w-0 flex flex-col overflow-x-hidden">
 
     <!-- Top Navigation Bar -->
-    <header class="no-print sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
-      <div class="mx-auto max-w-7xl px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
-        <div class="flex items-center gap-3 min-w-0">
-          <img src="assets/logo.jpg" alt="" width="40" height="40" class="w-10 h-10 rounded-full ring-1 ring-slate-200 shrink-0" />
+    <header class="no-print sticky top-0 z-30 w-full max-w-full bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
+      <div class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-3">
+        <div class="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+          <img src="assets/logo.jpg" alt="" width="40" height="40" class="w-9 h-9 sm:w-10 sm:h-10 rounded-full ring-1 ring-slate-200 shrink-0" />
           <div class="min-w-0 leading-tight">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 min-w-0">
               <h1 class="font-extrabold text-brand-950 text-sm sm:text-base truncate">Delta Medical — Serial Admin</h1>
-              <span class="hidden sm:inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-700">Live DB</span>
+              <span class="hidden sm:inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-700 shrink-0">Live DB</span>
             </div>
             <p id="sessionUserEmail" class="text-xs text-slate-500 truncate"></p>
           </div>
         </div>
 
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button id="newSerialBtn" type="button"
-                  class="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs sm:text-sm px-3.5 py-2.5 shadow-sm transition">
-            <svg class="w-4 h-4"><use href="#i-plus"/></svg>
-            <span>New Serial</span>
+                  class="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs sm:text-sm px-2.5 sm:px-3.5 py-2 sm:py-2.5 shadow-sm transition whitespace-nowrap">
+            <svg class="w-4 h-4 shrink-0"><use href="#i-plus"/></svg>
+            <span class="hidden sm:inline">New Serial</span>
+            <span class="sm:hidden">New</span>
           </button>
 
           <button id="refreshBtn" type="button" title="Refresh bookings"
-                  class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 p-2.5 transition">
+                  class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 p-2 sm:p-2.5 transition">
             <svg id="refreshIcon" class="w-4 h-4"><use href="#i-refresh"/></svg>
           </button>
 
           <a href="index.html" target="_blank" rel="noopener" title="Open Public Website"
-             class="hidden md:inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs px-3 py-2.5 transition">
+             class="hidden md:inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs px-3 py-2.5 transition whitespace-nowrap">
             <span>Public Site</span>
             <svg class="w-3.5 h-3.5 text-slate-400"><use href="#i-ext"/></svg>
           </a>
 
           <button id="logoutBtn" type="button"
-                  class="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs sm:text-sm px-3 py-2.5 transition">
+                  class="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs sm:text-sm p-2 sm:px-3 sm:py-2.5 transition">
             <svg class="w-4 h-4"><use href="#i-logout"/></svg>
             <span class="hidden sm:inline">Logout</span>
           </button>
@@ -250,27 +253,27 @@
     </header>
 
     <!-- Main Dashboard Content -->
-    <main id="dashboardMain" class="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+    <main id="dashboardMain" class="flex-1 mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-6">
 
       <!-- Dashboard Tab Switcher -->
-      <nav aria-label="Dashboard sections" class="no-print bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm inline-flex flex-wrap gap-1.5 w-full sm:w-auto" role="tablist">
+      <nav aria-label="Dashboard sections" class="no-print bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm grid grid-cols-1 sm:inline-flex sm:flex-wrap gap-1.5 w-full sm:w-auto max-w-full min-w-0" role="tablist">
         <button id="tabAppointmentsBtn" type="button" role="tab" aria-selected="true" aria-controls="appointmentsPanel"
-                class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition bg-brand-600 text-white shadow-sm cursor-pointer">
-          <span>📋 রোগীর সিরিয়াল (Appointments)</span>
-          <span id="tabAppointmentsCount" class="rounded-full bg-white/20 px-2 py-0.5 text-xs font-extrabold">0</span>
+                class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl px-3.5 sm:px-4 py-2.5 text-sm font-bold transition bg-brand-600 text-white shadow-sm cursor-pointer">
+          <span class="truncate">📋 রোগীর সিরিয়াল (Appointments)</span>
+          <span id="tabAppointmentsCount" class="rounded-full bg-white/20 px-2 py-0.5 text-xs font-extrabold shrink-0">0</span>
         </button>
         <button id="tabDoctorsBtn" type="button" role="tab" aria-selected="false" aria-controls="doctorsPanel"
-                class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition text-slate-600 hover:bg-slate-100 cursor-pointer">
-          <span>🩺 ডাক্তার তালিকা (Manage Doctors)</span>
-          <span id="tabDoctorsCount" class="rounded-full bg-slate-200/80 text-slate-700 px-2 py-0.5 text-xs font-extrabold">0</span>
+                class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl px-3.5 sm:px-4 py-2.5 text-sm font-bold transition text-slate-600 hover:bg-slate-100 cursor-pointer">
+          <span class="truncate">🩺 ডাক্তার তালিকা (Manage Doctors)</span>
+          <span id="tabDoctorsCount" class="rounded-full bg-slate-200/80 text-slate-700 px-2 py-0.5 text-xs font-extrabold shrink-0">0</span>
         </button>
       </nav>
 
       <!-- Database / Network Alert Banner -->
-      <div id="dbErrorBanner" class="no-print hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900" role="alert"></div>
+      <div id="dbErrorBanner" class="no-print hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 break-words" role="alert"></div>
 
       <!-- ============ TAB 1: APPOINTMENTS PANEL ============ -->
-      <div id="appointmentsPanel" role="tabpanel" aria-labelledby="tabAppointmentsBtn" class="space-y-6">
+      <div id="appointmentsPanel" role="tabpanel" aria-labelledby="tabAppointmentsBtn" class="w-full max-w-full min-w-0 space-y-5 sm:space-y-6">
 
       <!-- Print-Only Clean Hospital Header (A4 Sheet) -->
       <header id="printHeader" class="print-only mb-4 pb-3 border-b-2 border-slate-800">
@@ -291,82 +294,82 @@
       </header>
 
       <!-- Summary Counters (Click any card to quick-filter) -->
-      <section aria-label="Booking summary counters" class="no-print grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+      <section aria-label="Booking summary counters" class="no-print grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 min-w-0">
         <button type="button" data-quick-card="all"
-                class="text-left bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm hover:border-brand-300 transition group">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Total Bookings</span>
-            <span class="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 grid place-items-center group-hover:bg-brand-50 group-hover:text-brand-600">
+                class="min-w-0 text-left bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-5 shadow-sm hover:border-brand-300 transition group">
+          <div class="flex items-center justify-between gap-1.5">
+            <span class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 truncate">Total Bookings</span>
+            <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 text-slate-600 grid place-items-center shrink-0 group-hover:bg-brand-50 group-hover:text-brand-600">
               <svg class="w-4 h-4"><use href="#i-cal"/></svg>
             </span>
           </div>
           <p id="countTotal" class="mt-2 text-2xl sm:text-3xl font-extrabold text-slate-900">0</p>
-          <p class="mt-0.5 text-xs text-slate-400">All recorded serials</p>
+          <p class="mt-0.5 text-xs text-slate-400 truncate">All recorded serials</p>
         </button>
 
         <button type="button" data-quick-card="today"
-                class="text-left bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm hover:border-brand-300 transition group">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-brand-700">Today's Bookings</span>
-            <span class="w-8 h-8 rounded-xl bg-brand-50 text-brand-600 grid place-items-center">
+                class="min-w-0 text-left bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-5 shadow-sm hover:border-brand-300 transition group">
+          <div class="flex items-center justify-between gap-1.5">
+            <span class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-brand-700 truncate">Today's Bookings</span>
+            <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-brand-50 text-brand-600 grid place-items-center shrink-0">
               <svg class="w-4 h-4"><use href="#i-clock"/></svg>
             </span>
           </div>
           <p id="countToday" class="mt-2 text-2xl sm:text-3xl font-extrabold text-brand-700">0</p>
-          <p id="todayDateLabel" class="mt-0.5 text-xs text-slate-500">Scheduled for today</p>
+          <p id="todayDateLabel" class="mt-0.5 text-xs text-slate-500 truncate">Scheduled for today</p>
         </button>
 
         <button type="button" data-quick-card="Pending"
-                class="text-left bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm hover:border-amber-300 transition group">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-amber-700">Pending</span>
-            <span class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 grid place-items-center">
+                class="min-w-0 text-left bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-5 shadow-sm hover:border-amber-300 transition group">
+          <div class="flex items-center justify-between gap-1.5">
+            <span class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-amber-700 truncate">Pending</span>
+            <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-50 text-amber-600 grid place-items-center shrink-0">
               <svg class="w-4 h-4"><use href="#i-clock"/></svg>
             </span>
           </div>
           <p id="countPending" class="mt-2 text-2xl sm:text-3xl font-extrabold text-amber-600">0</p>
-          <p class="mt-0.5 text-xs text-slate-500">Awaiting confirmation</p>
+          <p class="mt-0.5 text-xs text-slate-500 truncate">Awaiting confirmation</p>
         </button>
 
         <button type="button" data-quick-card="Confirmed"
-                class="text-left bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm hover:border-emerald-300 transition group">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-emerald-700">Confirmed</span>
-            <span class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center">
+                class="min-w-0 text-left bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-5 shadow-sm hover:border-emerald-300 transition group">
+          <div class="flex items-center justify-between gap-1.5">
+            <span class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-emerald-700 truncate">Confirmed</span>
+            <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center shrink-0">
               <svg class="w-4 h-4"><use href="#i-check"/></svg>
             </span>
           </div>
           <p id="countConfirmed" class="mt-2 text-2xl sm:text-3xl font-extrabold text-emerald-600">0</p>
-          <p class="mt-0.5 text-xs text-slate-500">Ready for chamber</p>
+          <p class="mt-0.5 text-xs text-slate-500 truncate">Ready for chamber</p>
         </button>
       </section>
 
       <!-- Search, Filter & One-Click Export/Print Toolbar -->
-      <section class="no-print bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3.5">
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+      <section class="no-print w-full max-w-full min-w-0 bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-5 shadow-sm space-y-3.5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-2.5 items-stretch lg:items-center min-w-0">
           <!-- Search by patient name or phone -->
-          <div class="md:col-span-4 relative">
+          <div class="relative w-full sm:col-span-2 lg:flex-1 lg:min-w-[220px]">
             <label for="filterSearch" class="sr-only">Search by patient name or phone</label>
             <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"><use href="#i-search"/></svg>
             <input id="filterSearch" type="search" autocomplete="off"
                    placeholder="Search patient name or phone (e.g. 017...)"
-                   class="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+                   class="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-base sm:text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
           </div>
 
           <!-- Doctor filter -->
-          <div class="md:col-span-3">
+          <div class="w-full sm:w-auto lg:min-w-[180px] min-w-0">
             <label for="filterDoctor" class="sr-only">Filter by doctor</label>
             <select id="filterDoctor"
-                    class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
+                    class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base sm:text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
               <option value="All">Doctor: All</option>
             </select>
           </div>
 
           <!-- Status filter -->
-          <div class="md:col-span-2">
+          <div class="w-full sm:w-auto lg:min-w-[145px] min-w-0">
             <label for="filterStatus" class="sr-only">Filter by status</label>
             <select id="filterStatus"
-                    class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
+                    class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base sm:text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
               <option value="All">Status: All</option>
               <option value="Pending">Pending</option>
               <option value="Confirmed">Confirmed</option>
@@ -376,54 +379,54 @@
           </div>
 
           <!-- Date filter + Today / Reset buttons -->
-          <div class="md:col-span-3 flex items-center gap-2">
+          <div class="w-full sm:col-span-2 lg:w-auto flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-0">
             <label for="filterDate" class="sr-only">Filter by appointment date</label>
             <input id="filterDate" type="date"
-                   class="flex-1 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+                   class="flex-1 min-w-0 w-full sm:w-auto rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base sm:text-sm text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
             <button id="filterTodayBtn" type="button"
-                    class="rounded-xl border border-slate-300 bg-slate-50 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 px-3 py-2.5 text-xs font-bold text-slate-700 transition shrink-0">
+                    class="rounded-xl border border-slate-300 bg-slate-50 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 px-3 py-2.5 text-xs font-bold text-slate-700 transition shrink-0 whitespace-nowrap">
               Today
             </button>
             <button id="clearFiltersBtn" type="button"
-                    class="hidden rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-3 py-2.5 text-xs font-bold text-rose-700 transition shrink-0">
+                    class="hidden rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-3 py-2.5 text-xs font-bold text-rose-700 transition shrink-0 whitespace-nowrap">
               Reset
             </button>
           </div>
         </div>
 
         <!-- Large Receptionist Export & Print Action Bar -->
-        <div class="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div class="text-xs text-slate-500">
+        <div class="pt-3 border-t border-slate-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 min-w-0">
+          <div class="text-xs text-slate-500 min-w-0">
             <p id="resultsMeta" class="font-semibold text-slate-700" aria-live="polite">Loading appointments…</p>
             <p class="mt-0.5">Exports &amp; prints only the currently filtered serials shown below.</p>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:w-auto">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-2.5 w-full lg:w-auto">
             <button id="exportCsvBtn" type="button"
-                    class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:translate-y-px text-white font-bold text-sm sm:text-base px-5 py-3 shadow-md shadow-emerald-600/20 transition cursor-pointer">
+                    class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:translate-y-px text-white font-bold text-sm sm:text-base px-4 sm:px-5 py-3 shadow-md shadow-emerald-600/20 transition cursor-pointer whitespace-nowrap">
               <span>📥 Excel / CSV ডাউনলোড</span>
             </button>
             <button id="printSheetBtn" type="button"
-                    class="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-700 hover:bg-brand-800 active:translate-y-px text-white font-bold text-sm sm:text-base px-5 py-3 shadow-md shadow-brand-800/20 transition cursor-pointer">
+                    class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-brand-700 hover:bg-brand-800 active:translate-y-px text-white font-bold text-sm sm:text-base px-4 sm:px-5 py-3 shadow-md shadow-brand-800/20 transition cursor-pointer whitespace-nowrap">
               <span>🖨️ প্রিন্ট লিস্ট</span>
             </button>
           </div>
         </div>
       </section>
 
-      <!-- Appointments Table -->
-      <section id="tableCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div id="tableScrollWrap" class="overflow-x-auto">
-          <table id="appointmentsTable" class="w-full text-left border-collapse min-w-[860px]">
+      <!-- Appointments Table (Horizontal scroll strictly contained inside this card) -->
+      <section id="tableCard" class="w-full max-w-full min-w-0 bg-white rounded-2xl shadow-sm">
+        <div id="tableScrollWrap" class="w-full max-w-full overflow-x-auto rounded-xl border border-slate-200">
+          <table id="appointmentsTable" class="w-full text-left border-collapse min-w-[820px]">
             <thead>
               <tr class="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                <th class="py-3.5 px-3 w-14 text-center">#</th>
-                <th class="py-3.5 px-4">Patient & Phone</th>
-                <th class="py-3.5 px-4">Doctor & Department</th>
-                <th class="py-3.5 px-4">Appointment Date</th>
-                <th class="py-3.5 px-4">Reception Notes</th>
-                <th class="py-3.5 px-4 w-40">Status</th>
-                <th class="no-print py-3.5 px-4 text-right w-28">Actions</th>
+                <th class="py-3.5 px-3 w-14 text-center whitespace-nowrap">#</th>
+                <th class="py-3.5 px-4 whitespace-nowrap">Patient &amp; Phone</th>
+                <th class="py-3.5 px-4 whitespace-nowrap">Doctor &amp; Department</th>
+                <th class="py-3.5 px-4 whitespace-nowrap">Appointment Date</th>
+                <th class="py-3.5 px-4 whitespace-nowrap">Reception Notes</th>
+                <th class="py-3.5 px-4 w-40 whitespace-nowrap">Status</th>
+                <th class="no-print py-3.5 px-4 text-right w-28 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody id="appointmentsTbody" class="divide-y divide-slate-100 text-sm">
@@ -433,7 +436,7 @@
         </div>
 
         <!-- Empty State -->
-        <div id="emptyState" class="no-print hidden py-14 px-6 text-center">
+        <div id="emptyState" class="no-print hidden py-12 px-4 sm:px-6 text-center border border-t-0 border-slate-200 rounded-b-xl">
           <div class="mx-auto w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 grid place-items-center">
             <svg class="w-6 h-6"><use href="#i-cal"/></svg>
           </div>
@@ -441,7 +444,7 @@
           <p id="emptyDesc" class="mt-1 text-sm text-slate-500 max-w-md mx-auto">No serial bookings match your current filters, or no appointments have been logged yet.</p>
           <div class="mt-4 flex justify-center gap-2.5">
             <button id="emptyNewBtn" type="button"
-                    class="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs px-4 py-2.5 transition">
+                    class="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm px-4 py-2.5 transition">
               <svg class="w-4 h-4"><use href="#i-plus"/></svg>
               <span>+ New Serial</span>
             </button>
@@ -451,21 +454,21 @@
       </div><!-- /#appointmentsPanel -->
 
       <!-- ============ TAB 2: MANAGE DOCTORS PANEL ============ -->
-      <div id="doctorsPanel" role="tabpanel" aria-labelledby="tabDoctorsBtn" class="no-print hidden space-y-6">
+      <div id="doctorsPanel" role="tabpanel" aria-labelledby="tabDoctorsBtn" class="no-print hidden w-full max-w-full min-w-0 space-y-5 sm:space-y-6">
 
         <!-- Doctor Summary Counters -->
-        <section aria-label="Doctor summary counters" class="grid grid-cols-3 gap-3.5 sm:gap-4">
-          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+        <section aria-label="Doctor summary counters" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
+          <div class="min-w-0 bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
             <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Total Doctors</span>
             <p id="docCountTotal" class="mt-1.5 text-2xl sm:text-3xl font-extrabold text-slate-900">0</p>
             <p class="mt-0.5 text-xs text-slate-400">Stored in Supabase</p>
           </div>
-          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+          <div class="min-w-0 bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
             <span class="text-xs font-bold uppercase tracking-wider text-emerald-700">Active (On-Duty)</span>
             <p id="docCountActive" class="mt-1.5 text-2xl sm:text-3xl font-extrabold text-emerald-600">0</p>
             <p class="mt-0.5 text-xs text-slate-500">Visible on public website</p>
           </div>
-          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+          <div class="min-w-0 bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm sm:col-span-2 lg:col-span-1">
             <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Off-Duty</span>
             <p id="docCountOffDuty" class="mt-1.5 text-2xl sm:text-3xl font-extrabold text-slate-500">0</p>
             <p class="mt-0.5 text-xs text-slate-400">Hidden from public booking</p>
@@ -473,29 +476,27 @@
         </section>
 
         <!-- Doctors Filter & Add Toolbar -->
-        <section class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-          <div class="flex flex-col lg:flex-row lg:items-center gap-3">
-            <div class="flex-1 relative">
+        <section class="w-full max-w-full min-w-0 bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-5 shadow-sm">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center gap-2.5 min-w-0">
+            <div class="relative w-full sm:col-span-2 lg:flex-1 lg:min-w-[220px]">
               <label for="docFilterSearch" class="sr-only">Search doctors</label>
               <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"><use href="#i-search"/></svg>
               <input id="docFilterSearch" type="search" autocomplete="off"
                      placeholder="ডাক্তারের নাম, বিভাগ বা কক্ষ খুঁজুন (Search doctor, specialty, room)…"
-                     class="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+                     class="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-base sm:text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
             </div>
 
-            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              <select id="docFilterActive" aria-label="Filter doctors by duty status"
-                      class="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
-                <option value="all">Status: All Doctors</option>
-                <option value="active">Active (On-Duty)</option>
-                <option value="inactive">Off-Duty</option>
-              </select>
+            <select id="docFilterActive" aria-label="Filter doctors by duty status"
+                    class="w-full sm:w-auto rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-base sm:text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
+              <option value="all">Status: All Doctors</option>
+              <option value="active">Active (On-Duty)</option>
+              <option value="inactive">Off-Duty</option>
+            </select>
 
-              <button id="addDoctorBtn" type="button"
-                      class="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-700 active:translate-y-px text-white font-bold text-sm px-5 py-2.5 shadow-md shadow-brand-600/20 transition cursor-pointer shrink-0">
-                <span>+ নতুন ডাক্তার যোগ করুন (Add Doctor)</span>
-              </button>
-            </div>
+            <button id="addDoctorBtn" type="button"
+                    class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-700 active:translate-y-px text-white font-bold text-sm px-4 sm:px-5 py-2.5 shadow-md shadow-brand-600/20 transition cursor-pointer whitespace-nowrap">
+              <span>+ নতুন ডাক্তার যোগ করুন (Add Doctor)</span>
+            </button>
           </div>
 
           <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
@@ -505,18 +506,18 @@
         </section>
 
         <!-- Doctors Responsive Table -->
-        <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div class="overflow-x-auto">
+        <section class="w-full max-w-full min-w-0 bg-white rounded-2xl shadow-sm">
+          <div class="w-full max-w-full overflow-x-auto rounded-xl border border-slate-200">
             <table id="doctorsTable" class="w-full text-left border-collapse min-w-[860px]">
               <thead>
                 <tr class="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <th class="py-3.5 px-3 w-28 text-center">ক্রম (Order)</th>
-                  <th class="py-3.5 px-4">Doctor &amp; Qualifications</th>
-                  <th class="py-3.5 px-4">Specialty</th>
-                  <th class="py-3.5 px-4">Visiting Schedule</th>
-                  <th class="py-3.5 px-4 w-28">Room No</th>
-                  <th class="py-3.5 px-4 w-44">Duty Status</th>
-                  <th class="py-3.5 px-4 text-right w-28">Actions</th>
+                  <th class="py-3.5 px-3 w-28 text-center whitespace-nowrap">ক্রম (Order)</th>
+                  <th class="py-3.5 px-4 whitespace-nowrap">Doctor &amp; Qualifications</th>
+                  <th class="py-3.5 px-4 whitespace-nowrap">Specialty</th>
+                  <th class="py-3.5 px-4 whitespace-nowrap">Visiting Schedule</th>
+                  <th class="py-3.5 px-4 w-28 whitespace-nowrap">Room No</th>
+                  <th class="py-3.5 px-4 w-44 whitespace-nowrap">Duty Status</th>
+                  <th class="py-3.5 px-4 text-right w-28 whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody id="doctorsTbody" class="divide-y divide-slate-100 text-sm">
@@ -526,17 +527,17 @@
           </div>
 
           <!-- Doctors Empty State -->
-          <div id="doctorsEmptyState" class="hidden py-14 px-6 text-center">
+          <div id="doctorsEmptyState" class="hidden py-12 px-4 sm:px-6 text-center border border-t-0 border-slate-200 rounded-b-xl">
             <div class="mx-auto w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 grid place-items-center text-2xl" aria-hidden="true">🩺</div>
             <h3 id="doctorsEmptyTitle" class="mt-3 text-base font-bold text-slate-800">No doctors found in database</h3>
             <p id="doctorsEmptyDesc" class="mt-1 text-sm text-slate-500 max-w-md mx-auto">Add a doctor manually, or import the 12 existing clinic doctors to start managing schedules dynamically.</p>
-            <div class="mt-5 flex flex-wrap justify-center gap-2.5">
+            <div class="mt-5 flex flex-col sm:flex-row justify-center gap-2.5">
               <button id="emptyAddDoctorBtn" type="button"
-                      class="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs sm:text-sm px-4 py-2.5 transition cursor-pointer">
+                      class="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm px-4 py-2.5 transition cursor-pointer">
                 <span>+ নতুন ডাক্তার যোগ করুন (Add Doctor)</span>
               </button>
               <button id="seedDoctorsBtn" type="button"
-                      class="hidden inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-800 font-bold text-xs sm:text-sm px-4 py-2.5 transition cursor-pointer">
+                      class="hidden w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-800 font-bold text-sm px-4 py-2.5 transition cursor-pointer">
                 <span>Import 12 Existing Clinic Doctors</span>
               </button>
             </div>
@@ -549,211 +550,215 @@
   </div>
 
   <!-- ============ 3 & 4. CREATE / EDIT SERIAL MODAL ============ -->
-  <dialog id="serialModal" class="rounded-3xl p-0 w-full max-w-lg bg-white text-slate-800 shadow-2xl border border-slate-200">
-    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-      <div>
-        <h2 id="modalTitle" class="text-lg font-extrabold text-brand-950">+ New Serial Booking</h2>
-        <p id="modalSubtitle" class="text-xs text-slate-500">Log walk-in or phone serial directly into Supabase</p>
-      </div>
-      <button type="button" id="modalCloseBtn" class="w-9 h-9 rounded-full hover:bg-slate-100 grid place-items-center text-slate-500" aria-label="Close modal">
-        <svg class="w-5 h-5"><use href="#i-x"/></svg>
-      </button>
-    </div>
-
-    <form id="modalForm" class="p-6 grid gap-4" novalidate>
-      <input type="hidden" id="mId" />
-
-      <div id="modalError" class="hidden rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-semibold text-rose-800" role="alert"></div>
-
-      <div class="grid sm:grid-cols-2 gap-3.5">
-        <div>
-          <label for="mPatientName" class="block text-xs font-bold text-slate-700 mb-1">Patient Name <span class="text-delta-600">*</span></label>
-          <input id="mPatientName" type="text" required maxlength="80" placeholder="e.g. Rahima Khatun"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+  <dialog id="serialModal" class="fixed inset-0 z-50 m-0 h-full w-full max-h-none max-w-none border-0 flex items-center justify-center p-3 sm:p-4 bg-black/60 overflow-y-auto">
+    <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white text-slate-800 shadow-2xl border border-slate-200 p-4 sm:p-6 mx-auto">
+      <div class="pb-3.5 border-b border-slate-100 flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 id="modalTitle" class="text-lg font-extrabold text-brand-950 leading-snug">+ New Serial Booking</h2>
+          <p id="modalSubtitle" class="text-xs text-slate-500 mt-0.5">Log walk-in or phone serial directly into Supabase</p>
         </div>
-        <div>
-          <label for="mPatientPhone" class="block text-xs font-bold text-slate-700 mb-1">Phone Number <span class="text-delta-600">*</span></label>
-          <input id="mPatientPhone" type="tel" required maxlength="20" placeholder="01XXXXXXXXX"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-        </div>
+        <button type="button" id="modalCloseBtn" class="w-9 h-9 rounded-full hover:bg-slate-100 grid place-items-center text-slate-500 shrink-0" aria-label="Close modal">
+          <svg class="w-5 h-5"><use href="#i-x"/></svg>
+        </button>
       </div>
 
-      <!-- Quick-fill preset helper from clinic's verified doctors & services -->
-      <div class="rounded-xl bg-brand-50/70 border border-brand-100 p-3">
-        <label for="mQuickPreset" class="block text-[11px] font-bold uppercase tracking-wider text-brand-800 mb-1">Quick-Fill Clinic Doctor / Service (Optional)</label>
-        <select id="mQuickPreset"
-                class="w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus:border-brand-600 focus:outline-none">
-          <option value="">— Select to auto-fill Doctor & Department —</option>
-        </select>
-      </div>
+      <form id="modalForm" class="pt-4 grid gap-3.5 sm:gap-4" novalidate>
+        <input type="hidden" id="mId" />
 
-      <div class="grid sm:grid-cols-2 gap-3.5">
-        <div>
-          <label for="mDoctorName" class="block text-xs font-bold text-slate-700 mb-1">Doctor Name <span class="text-delta-600">*</span></label>
-          <input id="mDoctorName" type="text" list="doctorsDatalist" required maxlength="100" placeholder="e.g. Dr. Sarmin Akter Keya"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-          <datalist id="doctorsDatalist"></datalist>
-        </div>
-        <div>
-          <label for="mDepartment" class="block text-xs font-bold text-slate-700 mb-1">Department <span class="text-delta-600">*</span></label>
-          <input id="mDepartment" type="text" list="departmentsDatalist" required maxlength="100" placeholder="e.g. Gynecology & Obstetrics"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-          <datalist id="departmentsDatalist"></datalist>
-        </div>
-      </div>
+        <div id="modalError" class="hidden rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-semibold text-rose-800" role="alert"></div>
 
-      <div class="grid sm:grid-cols-2 gap-3.5">
-        <div>
-          <label for="mDate" class="block text-xs font-bold text-slate-700 mb-1">Appointment Date <span class="text-delta-600">*</span></label>
-          <input id="mDate" type="date" required
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <div class="min-w-0">
+            <label for="mPatientName" class="block text-xs font-bold text-slate-700 mb-1">Patient Name <span class="text-delta-600">*</span></label>
+            <input id="mPatientName" type="text" required maxlength="80" placeholder="e.g. Rahima Khatun"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+          </div>
+          <div class="min-w-0">
+            <label for="mPatientPhone" class="block text-xs font-bold text-slate-700 mb-1">Phone Number <span class="text-delta-600">*</span></label>
+            <input id="mPatientPhone" type="tel" required maxlength="20" placeholder="01XXXXXXXXX"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+          </div>
         </div>
-        <div>
-          <label for="mStatus" class="block text-xs font-bold text-slate-700 mb-1">Status <span class="text-delta-600">*</span></label>
-          <select id="mStatus"
-                  class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-800 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
-            <option value="Pending">Pending</option>
-            <option value="Confirmed">Confirmed</option>
-            <option value="Completed">Completed</option>
-            <option value="Cancelled">Cancelled</option>
+
+        <!-- Quick-fill preset helper from clinic's verified doctors & services -->
+        <div class="rounded-xl bg-brand-50/70 border border-brand-100 p-3 min-w-0">
+          <label for="mQuickPreset" class="block text-[11px] font-bold uppercase tracking-wider text-brand-800 mb-1">Quick-Fill Clinic Doctor / Service (Optional)</label>
+          <select id="mQuickPreset"
+                  class="w-full max-w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-base font-medium text-slate-700 focus:border-brand-600 focus:outline-none">
+            <option value="">— Select to auto-fill Doctor &amp; Department —</option>
           </select>
         </div>
-      </div>
 
-      <div>
-        <label for="mNotes" class="block text-xs font-bold text-slate-700 mb-1">Reception Notes</label>
-        <textarea id="mNotes" rows="3" maxlength="500" placeholder="e.g. Serial #08, walk-in patient, morning shift, fee paid…"
-                  class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15"></textarea>
-      </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <div class="min-w-0">
+            <label for="mDoctorName" class="block text-xs font-bold text-slate-700 mb-1">Doctor Name <span class="text-delta-600">*</span></label>
+            <input id="mDoctorName" type="text" list="doctorsDatalist" required maxlength="100" placeholder="e.g. Dr. Sarmin Akter Keya"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+            <datalist id="doctorsDatalist"></datalist>
+          </div>
+          <div class="min-w-0">
+            <label for="mDepartment" class="block text-xs font-bold text-slate-700 mb-1">Department <span class="text-delta-600">*</span></label>
+            <input id="mDepartment" type="text" list="departmentsDatalist" required maxlength="100" placeholder="e.g. Gynecology & Obstetrics"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+            <datalist id="departmentsDatalist"></datalist>
+          </div>
+        </div>
 
-      <div class="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
-        <button type="button" id="modalCancelBtn"
-                class="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition">
-          Cancel
-        </button>
-        <button type="submit" id="modalSaveBtn"
-                class="rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-2.5 text-sm shadow-sm transition disabled:opacity-60">
-          Save Serial
-        </button>
-      </div>
-    </form>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <div class="min-w-0">
+            <label for="mDate" class="block text-xs font-bold text-slate-700 mb-1">Appointment Date <span class="text-delta-600">*</span></label>
+            <input id="mDate" type="date" required
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+          </div>
+          <div class="min-w-0">
+            <label for="mStatus" class="block text-xs font-bold text-slate-700 mb-1">Status <span class="text-delta-600">*</span></label>
+            <select id="mStatus"
+                    class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-base font-semibold text-slate-800 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
+              <option value="Pending">Pending</option>
+              <option value="Confirmed">Confirmed</option>
+              <option value="Completed">Completed</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="min-w-0">
+          <label for="mNotes" class="block text-xs font-bold text-slate-700 mb-1">Reception Notes</label>
+          <textarea id="mNotes" rows="3" maxlength="500" placeholder="e.g. Serial #08, walk-in patient, morning shift, fee paid…"
+                    class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15"></textarea>
+        </div>
+
+        <div class="pt-3 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 border-t border-slate-100">
+          <button type="button" id="modalCancelBtn"
+                  class="w-full sm:w-auto rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition">
+            Cancel
+          </button>
+          <button type="submit" id="modalSaveBtn"
+                  class="w-full sm:w-auto rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-2.5 text-sm shadow-sm transition disabled:opacity-60">
+            Save Serial
+          </button>
+        </div>
+      </form>
+    </div>
   </dialog>
 
   <!-- ============ 5. CREATE / EDIT DOCTOR MODAL ============ -->
-  <dialog id="doctorModal" class="rounded-3xl p-0 w-full max-w-xl bg-white text-slate-800 shadow-2xl border border-slate-200">
-    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-      <div>
-        <h2 id="doctorModalTitle" class="text-lg font-extrabold text-brand-950">+ নতুন ডাক্তার যোগ করুন (Add Doctor)</h2>
-        <p id="doctorModalSubtitle" class="text-xs text-slate-500">Add or edit a specialist doctor in the Supabase doctors directory</p>
-      </div>
-      <button type="button" id="doctorModalCloseBtn" class="w-9 h-9 rounded-full hover:bg-slate-100 grid place-items-center text-slate-500" aria-label="Close modal">
-        <svg class="w-5 h-5"><use href="#i-x"/></svg>
-      </button>
-    </div>
-
-    <form id="doctorModalForm" class="p-6 grid gap-4" novalidate>
-      <input type="hidden" id="dId" />
-
-      <div id="doctorModalError" class="hidden rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-semibold text-rose-800" role="alert"></div>
-
-      <div class="grid sm:grid-cols-2 gap-3.5">
-        <div>
-          <label for="dNameBn" class="block text-xs font-bold text-slate-700 mb-1">Doctor Name (বাংলা) <span class="text-delta-600">*</span></label>
-          <input id="dNameBn" type="text" required maxlength="120" placeholder="যেমন: ডা. সারমিন আকতার কেয়া"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+  <dialog id="doctorModal" class="fixed inset-0 z-50 m-0 h-full w-full max-h-none max-w-none border-0 flex items-center justify-center p-3 sm:p-4 bg-black/60 overflow-y-auto">
+    <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white text-slate-800 shadow-2xl border border-slate-200 p-4 sm:p-6 mx-auto">
+      <div class="pb-3.5 border-b border-slate-100 flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 id="doctorModalTitle" class="text-lg font-extrabold text-brand-950 leading-snug">+ নতুন ডাক্তার যোগ করুন (Add Doctor)</h2>
+          <p id="doctorModalSubtitle" class="text-xs text-slate-500 mt-0.5">Add or edit a specialist doctor in the Supabase doctors directory</p>
         </div>
-        <div>
-          <label for="dNameEn" class="block text-xs font-bold text-slate-700 mb-1">Doctor Name (English) <span class="text-delta-600">*</span></label>
-          <input id="dNameEn" type="text" required maxlength="120" placeholder="e.g. Dr. Sarmin Akter Keya"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-        </div>
+        <button type="button" id="doctorModalCloseBtn" class="w-9 h-9 rounded-full hover:bg-slate-100 grid place-items-center text-slate-500 shrink-0" aria-label="Close modal">
+          <svg class="w-5 h-5"><use href="#i-x"/></svg>
+        </button>
       </div>
 
-      <div>
-        <label for="dQualifications" class="block text-xs font-bold text-slate-700 mb-1">Qualifications &amp; Degrees</label>
-        <input id="dQualifications" type="text" maxlength="250" placeholder="e.g. MBBS (Dhaka), BCS (Health), FCPS (Gynae & Obs)"
-               class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-      </div>
+      <form id="doctorModalForm" class="pt-4 grid gap-3.5 sm:gap-4" novalidate>
+        <input type="hidden" id="dId" />
 
-      <div class="grid sm:grid-cols-2 gap-3.5">
-        <div>
-          <label for="dSpecialtyBn" class="block text-xs font-bold text-slate-700 mb-1">Specialty (বাংলা) <span class="text-delta-600">*</span></label>
-          <input id="dSpecialtyBn" type="text" list="specBnDatalist" required maxlength="120" placeholder="যেমন: স্ত্রী ও প্রসূতি রোগ"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-          <datalist id="specBnDatalist"></datalist>
-        </div>
-        <div>
-          <label for="dSpecialtyEn" class="block text-xs font-bold text-slate-700 mb-1">Specialty (English) <span class="text-delta-600">*</span></label>
-          <input id="dSpecialtyEn" type="text" list="specEnDatalist" required maxlength="120" placeholder="e.g. Gynecology & Obstetrics"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-          <datalist id="specEnDatalist"></datalist>
-        </div>
-      </div>
+        <div id="doctorModalError" class="hidden rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-semibold text-rose-800" role="alert"></div>
 
-      <div class="grid sm:grid-cols-2 gap-3.5">
-        <div>
-          <label for="dVisitingDays" class="block text-xs font-bold text-slate-700 mb-1">Visiting Days <span class="text-delta-600">*</span></label>
-          <input id="dVisitingDays" type="text" required maxlength="120" placeholder="e.g. Daily or Friday, Tuesday"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-          <div class="mt-1.5 flex flex-wrap gap-1" id="docDayQuickBtns">
-            <button type="button" data-day-pick="Daily" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Daily</button>
-            <button type="button" data-day-pick="Saturday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Sat</button>
-            <button type="button" data-day-pick="Sunday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Sun</button>
-            <button type="button" data-day-pick="Monday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Mon</button>
-            <button type="button" data-day-pick="Tuesday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Tue</button>
-            <button type="button" data-day-pick="Wednesday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Wed</button>
-            <button type="button" data-day-pick="Thursday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Thu</button>
-            <button type="button" data-day-pick="Friday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-0.5 text-[11px] font-semibold transition">Fri</button>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <div class="min-w-0">
+            <label for="dNameBn" class="block text-xs font-bold text-slate-700 mb-1">Doctor Name (বাংলা) <span class="text-delta-600">*</span></label>
+            <input id="dNameBn" type="text" required maxlength="120" placeholder="যেমন: ডা. সারমিন আকতার কেয়া"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+          </div>
+          <div class="min-w-0">
+            <label for="dNameEn" class="block text-xs font-bold text-slate-700 mb-1">Doctor Name (English) <span class="text-delta-600">*</span></label>
+            <input id="dNameEn" type="text" required maxlength="120" placeholder="e.g. Dr. Sarmin Akter Keya"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
           </div>
         </div>
-        <div>
-          <label for="dVisitingHours" class="block text-xs font-bold text-slate-700 mb-1">Visiting Hours <span class="text-delta-600">*</span></label>
-          <input id="dVisitingHours" type="text" required maxlength="120" placeholder="e.g. 9:00 AM – 4:00 PM"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-        </div>
-      </div>
 
-      <div class="grid sm:grid-cols-2 gap-3.5">
-        <div>
-          <label for="dRoomNo" class="block text-xs font-bold text-slate-700 mb-1">Chamber / Room No</label>
-          <input id="dRoomNo" type="text" maxlength="50" placeholder="e.g. Room 201 (2nd Floor)"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+        <div class="min-w-0">
+          <label for="dQualifications" class="block text-xs font-bold text-slate-700 mb-1">Qualifications &amp; Degrees</label>
+          <input id="dQualifications" type="text" maxlength="250" placeholder="e.g. MBBS (Dhaka), BCS (Health), FCPS (Gynae & Obs)"
+                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
         </div>
-        <div>
-          <label for="dDisplayOrder" class="block text-xs font-bold text-slate-700 mb-1">সিরিয়াল / ক্রম নম্বর (Display Order)</label>
-          <input id="dDisplayOrder" type="number" min="1" step="1" placeholder="খালি রাখলে অটো নম্বর বসবে"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
-          <p class="mt-1 text-[11px] text-slate-400">Leave blank on Add to auto-assign the next number</p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <div class="min-w-0">
+            <label for="dSpecialtyBn" class="block text-xs font-bold text-slate-700 mb-1">Specialty (বাংলা) <span class="text-delta-600">*</span></label>
+            <input id="dSpecialtyBn" type="text" list="specBnDatalist" required maxlength="120" placeholder="যেমন: স্ত্রী ও প্রসূতি রোগ"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+            <datalist id="specBnDatalist"></datalist>
+          </div>
+          <div class="min-w-0">
+            <label for="dSpecialtyEn" class="block text-xs font-bold text-slate-700 mb-1">Specialty (English) <span class="text-delta-600">*</span></label>
+            <input id="dSpecialtyEn" type="text" list="specEnDatalist" required maxlength="120" placeholder="e.g. Gynecology & Obstetrics"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+            <datalist id="specEnDatalist"></datalist>
+          </div>
         </div>
-      </div>
 
-      <div class="rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5">
-        <label class="inline-flex items-center gap-3 cursor-pointer select-none">
-          <input id="dIsActive" type="checkbox" checked
-                 class="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" />
-          <span>
-            <span class="block text-xs font-bold text-slate-800">Active (On-Duty)</span>
-            <span class="block text-[11px] text-slate-500">Show on public website &amp; booking form</span>
-          </span>
-        </label>
-      </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <div class="min-w-0">
+            <label for="dVisitingDays" class="block text-xs font-bold text-slate-700 mb-1">Visiting Days <span class="text-delta-600">*</span></label>
+            <input id="dVisitingDays" type="text" required maxlength="120" placeholder="e.g. Daily or Friday, Tuesday"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+            <div class="mt-1.5 flex flex-wrap gap-1" id="docDayQuickBtns">
+              <button type="button" data-day-pick="Daily" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-1 text-xs font-semibold transition">Daily</button>
+              <button type="button" data-day-pick="Saturday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-1 text-xs font-semibold transition">Sat</button>
+              <button type="button" data-day-pick="Sunday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-1 text-xs font-semibold transition">Sun</button>
+              <button type="button" data-day-pick="Monday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-1 text-xs font-semibold transition">Mon</button>
+              <button type="button" data-day-pick="Tuesday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-1 text-xs font-semibold transition">Tue</button>
+              <button type="button" data-day-pick="Wednesday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-1 text-xs font-semibold transition">Wed</button>
+              <button type="button" data-day-pick="Thursday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-1 text-xs font-semibold transition">Thu</button>
+              <button type="button" data-day-pick="Friday" class="rounded-md bg-slate-100 hover:bg-brand-100 text-slate-700 hover:text-brand-800 px-2 py-1 text-xs font-semibold transition">Fri</button>
+            </div>
+          </div>
+          <div class="min-w-0">
+            <label for="dVisitingHours" class="block text-xs font-bold text-slate-700 mb-1">Visiting Hours <span class="text-delta-600">*</span></label>
+            <input id="dVisitingHours" type="text" required maxlength="120" placeholder="e.g. 9:00 AM – 4:00 PM"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+          </div>
+        </div>
 
-      <div class="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
-        <button type="button" id="doctorModalCancelBtn"
-                class="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition">
-          Cancel
-        </button>
-        <button type="submit" id="doctorModalSaveBtn"
-                class="rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-2.5 text-sm shadow-sm transition disabled:opacity-60">
-          Save Doctor
-        </button>
-      </div>
-    </form>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <div class="min-w-0">
+            <label for="dRoomNo" class="block text-xs font-bold text-slate-700 mb-1">Chamber / Room No</label>
+            <input id="dRoomNo" type="text" maxlength="50" placeholder="e.g. Room 201 (2nd Floor)"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+          </div>
+          <div class="min-w-0">
+            <label for="dDisplayOrder" class="block text-xs font-bold text-slate-700 mb-1">সিরিয়াল / ক্রম নম্বর (Display Order)</label>
+            <input id="dDisplayOrder" type="number" min="1" step="1" placeholder="খালি রাখলে অটো নম্বর বসবে"
+                   class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+            <p class="mt-1 text-[11px] text-slate-400">Leave blank on Add to auto-assign the next number</p>
+          </div>
+        </div>
+
+        <div class="rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5">
+          <label class="inline-flex items-center gap-3 cursor-pointer select-none">
+            <input id="dIsActive" type="checkbox" checked
+                   class="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0" />
+            <span>
+              <span class="block text-xs font-bold text-slate-800">Active (On-Duty)</span>
+              <span class="block text-[11px] text-slate-500">Show on public website &amp; booking form</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="pt-3 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 border-t border-slate-100">
+          <button type="button" id="doctorModalCancelBtn"
+                  class="w-full sm:w-auto rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition">
+            Cancel
+          </button>
+          <button type="submit" id="doctorModalSaveBtn"
+                  class="w-full sm:w-auto rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold px-5 py-2.5 text-sm shadow-sm transition disabled:opacity-60">
+            Save Doctor
+          </button>
+        </div>
+      </form>
+    </div>
   </dialog>
 
   <!-- ============ 6. DELETE CONFIRMATION MODAL ============ -->
-  <dialog id="deleteModal" class="rounded-3xl p-0 w-full max-w-md bg-white text-slate-800 shadow-2xl border border-slate-200">
-    <div class="p-6">
+  <dialog id="deleteModal" class="fixed inset-0 z-50 m-0 h-full w-full max-h-none max-w-none border-0 flex items-center justify-center p-3 sm:p-4 bg-black/60 overflow-y-auto">
+    <div class="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white text-slate-800 shadow-2xl border border-slate-200 p-4 sm:p-6 mx-auto">
       <div class="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 grid place-items-center">
         <svg class="w-6 h-6"><use href="#i-trash"/></svg>
       </div>
@@ -762,13 +767,13 @@
         Are you sure you want to permanently remove the serial for
         <strong id="delPatientLabel" class="text-slate-900"></strong>? This action cannot be undone.
       </p>
-      <div class="mt-6 flex items-center justify-end gap-2.5">
+      <div class="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
         <button type="button" id="delCancelBtn"
-                class="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition">
+                class="w-full sm:w-auto rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition">
           Cancel
         </button>
         <button type="button" id="delConfirmBtn"
-                class="rounded-xl bg-delta-600 hover:bg-delta-700 text-white font-bold px-4 py-2.5 text-sm shadow-sm transition disabled:opacity-60">
+                class="w-full sm:w-auto rounded-xl bg-delta-600 hover:bg-delta-700 text-white font-bold px-4 py-2.5 text-sm shadow-sm transition disabled:opacity-60">
           Yes, Delete
         </button>
       </div>
@@ -776,7 +781,7 @@
   </dialog>
 
   <!-- ============ TOAST NOTIFICATION ============ -->
-  <div id="toast" class="fixed bottom-5 right-5 z-50 hidden max-w-sm rounded-2xl bg-brand-950 text-white px-4 py-3 text-sm font-semibold shadow-xl border border-white/10" role="status" aria-live="polite"></div>
+  <div id="toast" class="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-5 z-50 hidden sm:max-w-sm rounded-2xl bg-brand-950 text-white px-4 py-3 text-sm font-semibold shadow-xl border border-white/10" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase-config.js"></script>
