@@ -215,7 +215,8 @@
       .from("doctors")
       .select("*")
       .eq("is_active", true)
-      .order("created_at", { ascending: true })
+      .order("display_order", { ascending: true })
+      .order("id", { ascending: true })
       .then(function (res) {
         if (res.error) {
           // Keep hardcoded fallback silently if table isn't ready or offline

@@ -898,6 +898,8 @@
     });
   }
 
+  var isReorderingDoctors = false;
+
   function renderDoctorsTable() {
     var tbody = $("doctorsTbody");
     var empty = $("doctorsEmptyState");
@@ -924,6 +926,14 @@
     if (empty) empty.classList.add("hidden");
 
     tbody.innerHTML = list.map(function (doc, idx) {
+      var fullIdx = doctorsList.indexOf(doc);
+      var positionLabel =
+        doc.display_order != null && doc.display_order !== ""
+          ? doc.display_order
+          : (fullIdx !== -1 ? fullIdx + 1 : idx + 1);
+      var isFirst = fullIdx <= 0 || isReorderingDoctors;
+      var isLast = fullIdx === -1 || fullIdx >= doctorsList.length - 1 || isReorderingDoctors;
+
       var isActive = doc.is_active !== false;
       var switchTrack = isActive ? "bg-emerald-500" : "bg-slate-300";
       var switchKnob = isActive ? "translate-x-5" : "translate-x-0.5";
@@ -933,7 +943,24 @@
 
       return (
         '<tr class="hover:bg-slate-50/80 transition align-top">' +
-          '<td class="py-3.5 px-3 text-center font-extrabold text-slate-500">' + (idx + 1) + "</td>" +
+          // ক্রম (Order) with position number + Up / Down controls
+          '<td class="py-3.5 px-3 whitespace-nowrap">' +
+            '<div class="inline-flex items-center justify-center gap-1.5 w-full">' +
+              '<span class="inline-flex items-center justify-center min-w-[1.75rem] h-7 rounded-lg bg-brand-50 text-brand-800 font-extrabold text-xs px-1.5 border border-brand-100">' +
+                escapeHtml(positionLabel) +
+              "</span>" +
+              '<div class="inline-flex items-center gap-0.5">' +
+                '<button type="button" data-move-doctor="' + escapeHtml(doc.id) + '" data-move-dir="up"' +
+                        (isFirst ? " disabled" : "") +
+                        ' title="Move up" aria-label="Move ' + escapeHtml(doc.name_en || doc.name_bn) + ' up"' +
+                        ' class="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 text-slate-600 text-xs font-bold transition cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-200 disabled:hover:text-slate-600">↑</button>' +
+                '<button type="button" data-move-doctor="' + escapeHtml(doc.id) + '" data-move-dir="down"' +
+                        (isLast ? " disabled" : "") +
+                        ' title="Move down" aria-label="Move ' + escapeHtml(doc.name_en || doc.name_bn) + ' down"' +
+                        ' class="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 text-slate-600 text-xs font-bold transition cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-200 disabled:hover:text-slate-600">↓</button>' +
+              "</div>" +
+            "</div>" +
+          "</td>" +
 
           // Doctor Name & Qualifications
           '<td class="py-3.5 px-4">' +
@@ -1009,6 +1036,64 @@
     }).join("");
   }
 
+  function moveDoctorOrder(idStr, direction) {
+    if (!window.supabaseClient || isReorderingDoctors) return;
+    var idx = doctorsList.findIndex(function (d) {
+      return String(d.id) === String(idStr);
+    });
+    if (idx === -1) return;
+
+    var swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= doctorsList.length) return;
+
+    isReorderingDoctors = true;
+    renderDoctorsTable();
+
+    // Normalize all rows to sequential display_order (1, 2, 3...) and swap the two neighbors
+    var reordered = doctorsList.slice();
+    var temp = reordered[idx];
+    reordered[idx] = reordered[swapIdx];
+    reordered[swapIdx] = temp;
+
+    var updates = [];
+    reordered.forEach(function (doc, positionIdx) {
+      var targetOrder = positionIdx + 1;
+      var isSwappedRow = positionIdx === idx || positionIdx === swapIdx;
+      var currentOrder = doc.display_order != null ? Number(doc.display_order) : null;
+      if (isSwappedRow || currentOrder !== targetOrder) {
+        updates.push({ id: doc.id, display_order: targetOrder });
+      }
+    });
+
+    Promise.all(
+      updates.map(function (item) {
+        return window.supabaseClient
+          .from("doctors")
+          .update({ display_order: item.display_order })
+          .eq("id", item.id);
+      })
+    )
+      .then(function (results) {
+        var failed = results.find(function (r) { return r && r.error; });
+        if (failed) {
+          showToast("Order update failed: " + failed.error.message, true);
+          return;
+        }
+        showToast("Doctor order updated");
+        return loadDoctors(true);
+      })
+      .catch(function (err) {
+        showToast((err && err.message) || "Failed to update doctor order", true);
+      })
+      .finally(function () {
+        isReorderingDoctors = false;
+        renderDoctorsTable();
+      });
+  }
+
+  // Expose helper on window for standard script compatibility
+  window.moveDoctorOrder = moveDoctorOrder;
+
   function loadDoctors(silent) {
     if (!window.supabaseClient) return Promise.resolve();
     var icon = $("refreshIcon");
@@ -1017,7 +1102,8 @@
     return window.supabaseClient
       .from("doctors")
       .select("*")
-      .order("created_at", { ascending: true })
+      .order("display_order", { ascending: true })
+      .order("id", { ascending: true })
       .then(function (res) {
         if (res.error) {
           if (activeTab === "doctors") {
@@ -1096,6 +1182,7 @@
     $("dVisitingDays").value = "";
     $("dVisitingHours").value = "";
     $("dRoomNo").value = "";
+    $("dDisplayOrder").value = "";
     $("dIsActive").checked = true;
 
     $("doctorModalTitle").textContent = "+ নতুন ডাক্তার যোগ করুন (Add Doctor)";
@@ -1121,10 +1208,12 @@
     $("dVisitingDays").value = doc.visiting_days || "";
     $("dVisitingHours").value = doc.visiting_hours || "";
     $("dRoomNo").value = doc.room_no || "";
+    $("dDisplayOrder").value =
+      doc.display_order != null && doc.display_order !== "" ? String(doc.display_order) : "";
     $("dIsActive").checked = doc.is_active !== false;
 
     $("doctorModalTitle").textContent = "Edit Doctor Details";
-    $("doctorModalSubtitle").textContent = "Update chamber schedule, qualifications, room, or duty status";
+    $("doctorModalSubtitle").textContent = "Update chamber schedule, qualifications, room, display order, or duty status";
     $("doctorModalSaveBtn").textContent = "Save Changes";
     showDoctorModalError("");
 
@@ -1148,6 +1237,7 @@
     var visiting_days = ($("dVisitingDays").value || "").trim();
     var visiting_hours = ($("dVisitingHours").value || "").trim();
     var room_no = ($("dRoomNo").value || "").trim();
+    var rawDisplayOrder = toAsciiDigits(($("dDisplayOrder").value || "").trim());
     var is_active = !!$("dIsActive").checked;
 
     if (!name_bn) {
@@ -1181,6 +1271,16 @@
       return;
     }
 
+    var parsedOrder = null;
+    if (rawDisplayOrder !== "") {
+      parsedOrder = parseInt(rawDisplayOrder, 10);
+      if (isNaN(parsedOrder) || parsedOrder < 1) {
+        showDoctorModalError("Display Order must be a positive number (1 or higher).");
+        $("dDisplayOrder").focus();
+        return;
+      }
+    }
+
     var payload = {
       name_bn: name_bn,
       name_en: name_en,
@@ -1192,6 +1292,11 @@
       room_no: room_no || null,
       is_active: is_active
     };
+
+    // Only set display_order when explicitly provided; leaving blank on Add lets the DB auto-assign
+    if (parsedOrder !== null) {
+      payload.display_order = parsedOrder;
+    }
 
     var saveBtn = $("doctorModalSaveBtn");
     saveBtn.disabled = true;
@@ -1243,7 +1348,7 @@
     var specs = window.SPECIALTIES || {};
     var dayLabels = window.DAY_LABELS || {};
 
-    var rows = window.DOCTORS.map(function (doc) {
+    var rows = window.DOCTORS.map(function (doc, idx) {
       var spBn = (doc.specialties || []).map(function (k) { return specs[k] ? specs[k].bn : k; }).join(", ");
       var spEn = (doc.specialties || []).map(function (k) { return specs[k] ? specs[k].en : k; }).join(", ");
 
@@ -1270,6 +1375,7 @@
         visiting_days: daysArr.join(", ") || "Daily",
         visiting_hours: hoursArr.join(" / ") || "",
         room_no: null,
+        display_order: idx + 1,
         is_active: true
       };
     });
@@ -1550,6 +1656,16 @@
       renderDoctorsTable();
     });
     $("doctorsTbody").addEventListener("click", function (e) {
+      var moveBtn = e.target.closest("[data-move-doctor]");
+      if (moveBtn) {
+        if (!moveBtn.disabled) {
+          moveDoctorOrder(
+            moveBtn.getAttribute("data-move-doctor"),
+            moveBtn.getAttribute("data-move-dir")
+          );
+        }
+        return;
+      }
       var toggleBtn = e.target.closest("[data-toggle-doctor]");
       if (toggleBtn) {
         handleToggleDoctorActive(toggleBtn);
