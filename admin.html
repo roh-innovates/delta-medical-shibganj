@@ -272,6 +272,26 @@
       <!-- Database / Network Alert Banner -->
       <div id="dbErrorBanner" class="no-print hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 break-words" role="alert"></div>
 
+      <!-- Live Chamber Queue Control Panel ("লাইভ চেম্বার সিরিয়াল") -->
+      <section id="liveQueueControlSection" aria-label="Live Chamber Queue Controls" class="no-print w-full max-w-full min-w-0 bg-gradient-to-br from-emerald-50/70 via-white to-brand-50/40 rounded-2xl border border-emerald-200 p-4 sm:p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3.5">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="relative flex h-3 w-3 shrink-0" aria-hidden="true">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-600"></span>
+            </span>
+            <div class="min-w-0">
+              <h2 class="font-extrabold text-brand-950 text-sm sm:text-base leading-snug">লাইভ চেম্বার সিরিয়াল (Now Serving Control)</h2>
+              <p class="text-xs text-slate-500">Tap <strong class="text-emerald-700">+1 Next</strong> to update the live serial ticker on the public website</p>
+            </div>
+          </div>
+          <span id="liveQueueDatePill" class="rounded-full bg-white border border-emerald-200 px-3 py-1 text-xs font-bold text-emerald-800 shrink-0"></span>
+        </div>
+        <div id="liveQueueControlGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
+          <p class="text-xs text-slate-500 col-span-full">Loading active doctors…</p>
+        </div>
+      </section>
+
       <!-- ============ TAB 1: APPOINTMENTS PANEL ============ -->
       <div id="appointmentsPanel" role="tabpanel" aria-labelledby="tabAppointmentsBtn" class="w-full max-w-full min-w-0 space-y-5 sm:space-y-6">
 
@@ -420,13 +440,13 @@
           <table id="appointmentsTable" class="w-full text-left border-collapse min-w-[820px]">
             <thead>
               <tr class="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                <th class="py-3.5 px-3 w-14 text-center whitespace-nowrap">#</th>
+                <th class="py-3.5 px-3 w-24 text-center whitespace-nowrap">Serial No</th>
                 <th class="py-3.5 px-4 whitespace-nowrap">Patient &amp; Phone</th>
                 <th class="py-3.5 px-4 whitespace-nowrap">Doctor &amp; Department</th>
                 <th class="py-3.5 px-4 whitespace-nowrap">Appointment Date</th>
                 <th class="py-3.5 px-4 whitespace-nowrap">Reception Notes</th>
                 <th class="py-3.5 px-4 w-40 whitespace-nowrap">Status</th>
-                <th class="no-print py-3.5 px-4 text-right w-28 whitespace-nowrap">Actions</th>
+                <th class="no-print py-3.5 px-4 text-right w-52 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody id="appointmentsTbody" class="divide-y divide-slate-100 text-sm">

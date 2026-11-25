@@ -82,6 +82,16 @@
       "doc.room": "কক্ষ নং",
       "doc.photoAlt": "{name} এর ছবি",
 
+      "queue.title": "বর্তমান সিরিয়াল চলছে (Now Serving)",
+      "queue.subtitle": "লাইভ আপডেট · প্রতি ২০ সেকেন্ডে",
+      "queue.notStarted": "চেম্বার শুরু হয়নি",
+      "queue.nowServing": "চলমান সিরিয়াল:",
+      "slip.badgeLabel": "আপনার সিরিয়াল নম্বর",
+      "slip.note": "চেম্বারে আসার সময় এই স্লিপটি রিসেপশনে দেখান",
+      "slip.doctor": "ডাক্তার",
+      "slip.dept": "বিভাগ",
+      "form.viewSlip": "ডিজিটাল স্লিপ দেখুন",
+
       "svc.eyebrow": "বিভাগ ও ডায়াগনস্টিক",
       "svc.title": "আমাদের সেবাসমূহ",
       "svc.lead": "মা ও শিশুর পূর্ণাঙ্গ চিকিৎসা থেকে আধুনিক পরীক্ষা-নিরীক্ষা — সবকিছু এক জায়গায়।",
@@ -245,6 +255,16 @@
       "doc.schedule": "Visiting hours",
       "doc.room": "Room No",
       "doc.photoAlt": "Photo of {name}",
+
+      "queue.title": "Now Serving (Live Chamber Serial)",
+      "queue.subtitle": "Live updates · every 20s",
+      "queue.notStarted": "চেম্বার শুরু হয়নি",
+      "queue.nowServing": "চলমান সিরিয়াল:",
+      "slip.badgeLabel": "Your Serial Number",
+      "slip.note": "Please show this digital slip at reception when visiting",
+      "slip.doctor": "Doctor",
+      "slip.dept": "Department",
+      "form.viewSlip": "View Digital Slip",
 
       "svc.eyebrow": "Departments & Diagnostics",
       "svc.title": "Our Services",

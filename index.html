@@ -264,6 +264,24 @@
           <p class="section-lead" data-i18n="doc.lead">বিভাগ বা বার অনুযায়ী খুঁজুন, তারপর এক ট্যাপে সিরিয়াল দিন।</p>
         </header>
 
+        <!-- Live Chamber Queue Ticker ("বর্তমান সিরিয়াল চলছে") -->
+        <div id="liveQueueSection" class="mt-7 rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50/80 via-white to-brand-50/50 p-4 sm:p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <span class="relative flex h-3 w-3 shrink-0" aria-hidden="true">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-600"></span>
+              </span>
+              <h3 class="font-extrabold text-brand-950 text-base sm:text-lg leading-snug" data-i18n="queue.title">বর্তমান সিরিয়াল চলছে (Now Serving)</h3>
+            </div>
+            <p class="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+              <span data-i18n="queue.subtitle">লাইভ আপডেট · প্রতি ২০ সেকেন্ডে</span>
+              <span id="liveQueueTime" class="text-emerald-700 font-bold"></span>
+            </p>
+          </div>
+          <div id="liveQueueGrid" class="mt-3.5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+        </div>
+
         <!-- Filters -->
         <div class="mt-8 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
           <div class="grid md:grid-cols-[1fr_auto] gap-3">
@@ -543,6 +561,67 @@
       </button>
       <h2 id="posterTitle" class="sr-only"></h2>
       <img id="posterImg" src="" alt="" class="block max-h-[85vh] w-auto max-w-full mx-auto rounded-2xl" />
+    </div>
+  </dialog>
+
+  <!-- ============ DIGITAL SERIAL SLIP MODAL ============ -->
+  <dialog id="serialSlipModal" class="slip-dialog fixed inset-0 z-50 m-0 h-full w-full max-h-none max-w-none border-0 flex items-center justify-center p-3 sm:p-4 bg-black/60 overflow-y-auto" aria-labelledby="slipHeading">
+    <div id="serialSlipCard" class="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white text-slate-800 shadow-2xl border border-slate-200 p-4 sm:p-6 mx-auto">
+      <div class="flex items-start justify-between gap-2 pb-3.5 border-b border-dashed border-slate-300">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <img src="assets/logo.jpg" alt="" width="44" height="44" class="w-11 h-11 rounded-full ring-2 ring-brand-100 shrink-0" />
+          <div class="min-w-0 leading-snug">
+            <h2 id="slipHeading" class="font-extrabold text-brand-950 text-sm sm:text-base">ডেলটা মেডিকেল সেন্টার এন্ড মা ও শিশু হাসপাতাল</h2>
+            <p class="text-xs font-bold text-brand-600 mt-0.5">ডিজিটাল সিরিয়াল স্লিপ</p>
+            <p class="text-[11px] text-slate-500">হাসপাতাল রোড, শিবগঞ্জ · ০১৭২৪-৩৬৩৮৩৮</p>
+          </div>
+        </div>
+        <button type="button" id="slipCloseBtn" class="no-print w-8 h-8 rounded-full hover:bg-slate-100 text-slate-500 grid place-items-center shrink-0" data-i18n-aria="lb.close" aria-label="বন্ধ করুন">
+          <svg class="icon w-5 h-5"><use href="#i-x"/></svg>
+        </button>
+      </div>
+
+      <!-- Prominent Serial Badge -->
+      <div class="mt-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-brand-50 border border-emerald-200 p-4 text-center">
+        <p class="text-xs font-bold uppercase tracking-wider text-emerald-800" data-i18n="slip.badgeLabel">আপনার সিরিয়াল নম্বর</p>
+        <p id="slipSerialBadge" class="mt-1 text-4xl font-extrabold tracking-tight text-brand-900">SL-01</p>
+        <p class="mt-1 text-xs font-semibold text-emerald-700" data-i18n="slip.note">চেম্বারে আসার সময় এই স্লিপটি রিসেপশনে দেখান</p>
+      </div>
+
+      <!-- Patient & Appointment Details -->
+      <dl class="mt-4 divide-y divide-slate-100 text-sm">
+        <div class="py-2 flex items-start justify-between gap-3">
+          <dt class="text-slate-500 font-medium shrink-0" data-i18n="wa.name">রোগীর নাম</dt>
+          <dd id="slipPatientName" class="font-bold text-slate-900 text-right break-words">—</dd>
+        </div>
+        <div class="py-2 flex items-start justify-between gap-3">
+          <dt class="text-slate-500 font-medium shrink-0" data-i18n="wa.phone">মোবাইল</dt>
+          <dd id="slipPatientPhone" class="font-bold text-slate-900 text-right">—</dd>
+        </div>
+        <div class="py-2 flex items-start justify-between gap-3">
+          <dt class="text-slate-500 font-medium shrink-0" data-i18n="slip.doctor">ডাক্তার</dt>
+          <dd id="slipDoctorName" class="font-bold text-brand-900 text-right break-words">—</dd>
+        </div>
+        <div class="py-2 flex items-start justify-between gap-3">
+          <dt class="text-slate-500 font-medium shrink-0" data-i18n="slip.dept">বিভাগ</dt>
+          <dd id="slipDepartment" class="font-semibold text-slate-700 text-right break-words">—</dd>
+        </div>
+        <div class="py-2 flex items-start justify-between gap-3">
+          <dt class="text-slate-500 font-medium shrink-0" data-i18n="wa.date">পছন্দের তারিখ</dt>
+          <dd id="slipDate" class="font-bold text-slate-900 text-right">—</dd>
+        </div>
+      </dl>
+
+      <!-- Action Buttons -->
+      <div class="no-print mt-5 pt-4 border-t border-slate-100 grid gap-2.5">
+        <button type="button" id="slipPrintBtn" class="btn btn-brand justify-center w-full py-3 text-sm sm:text-base">
+          <span>🖨️ প্রিন্ট / সেভ স্লিপ</span>
+        </button>
+        <a id="slipWaBtn" href="https://wa.me/8801724363838" target="_blank" rel="noopener" class="btn btn-wa justify-center w-full py-3 text-sm sm:text-base">
+          <span>📲 WhatsApp-এ স্লিপ পাঠান</span>
+        </a>
+        <button type="button" id="slipDoneBtn" class="btn btn-outline justify-center w-full py-2.5 text-sm" data-i18n="lb.close">বন্ধ করুন</button>
+      </div>
     </div>
   </dialog>
 

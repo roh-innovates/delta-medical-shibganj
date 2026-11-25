@@ -65,10 +65,29 @@
   }
 
   function todayIso() {
-    var d = new Date();
-    var m = String(d.getMonth() + 1).padStart(2, "0");
-    var day = String(d.getDate()).padStart(2, "0");
-    return d.getFullYear() + "-" + m + "-" + day;
+    return new Date().toLocaleDateString("en-CA");
+  }
+
+  function formatSerialCode(serialNo) {
+    var n = parseInt(serialNo, 10);
+    if (isNaN(n) || n <= 0) return "—";
+    return "SL-" + String(n).padStart(2, "0");
+  }
+
+  function getRowSerialCode(row, fallbackIdx) {
+    var raw = row && row.serial_no != null ? parseInt(row.serial_no, 10) : NaN;
+    if (!isNaN(raw) && raw > 0) return formatSerialCode(raw);
+    return formatSerialCode((fallbackIdx || 0) + 1);
+  }
+
+  function normalizeWaPhone(rawPhone) {
+    var digits = toAsciiDigits(rawPhone || "").replace(/\D/g, "");
+    if (!digits) return "";
+    return digits.startsWith("880")
+      ? digits
+      : digits.startsWith("0")
+        ? "88" + digits
+        : "880" + digits;
   }
 
   function formatDateBadge(isoDate) {
@@ -144,19 +163,23 @@
     return "";
   }
 
-  function buildPatientWhatsAppLink(row) {
-    var clean = normalizePhone(row.patient_phone);
-    if (!/^01\d{9}$/.test(clean)) return "";
-    var intl = "88" + clean;
+  function buildPatientWhatsAppLink(row, serialCode) {
+    var waPhone = normalizeWaPhone(row.patient_phone);
+    if (!waPhone || waPhone.length < 11) return "";
+    var sl = serialCode || getRowSerialCode(row, 0);
+    var bnDoc = lookupBanglaDoctorName(row.doctor_name);
+    var docDisplay = bnDoc ? bnDoc + " (" + row.doctor_name + ")" : (row.doctor_name || "Duty Doctor");
     var msg =
-      "আসসালামু আলাইকুম " + (row.patient_name || "") + ",\n" +
-      "ডেলটা মেডিকেল সেন্টার এন্ড মা ও শিশু হাসপাতাল (শিবগঞ্জ) থেকে আপনার সিরিয়ালের আপডেট:\n" +
-      "• ডাক্তার/বিভাগ: " + (row.doctor_name || "") + " (" + (row.department || "") + ")\n" +
+      "আসসালামু আলাইকুম " + (row.patient_name || "সম্মানিত রোগী") + ",\n" +
+      "ডেলটা মেডিকেল সেন্টার এন্ড মা ও শিশু হাসপাতাল (শিবগঞ্জ) থেকে আপনার ডিজিটাল সিরিয়াল নিশ্চিত করা হয়েছে:\n\n" +
+      "• সিরিয়াল নম্বর: " + sl + "\n" +
+      "• রোগীর নাম: " + (row.patient_name || "") + "\n" +
+      "• ডাক্তার: " + docDisplay + "\n" +
+      (row.department ? "• বিভাগ: " + row.department + "\n" : "") +
       "• তারিখ: " + (row.appointment_date || "") + "\n" +
-      "• স্ট্যাটাস: " + (row.status || "Pending") +
-      (row.notes ? "\n• নোট: " + row.notes : "") +
-      "\nপ্রয়োজনে কল করুন: ০১৭২৪-৩৬৩৮৩৮";
-    return "https://wa.me/" + intl + "?text=" + encodeURIComponent(msg);
+      (row.notes ? "• নোট: " + row.notes + "\n" : "") +
+      "\nচেম্বারে আসার সময় এই মেসেজটি রিসেপশনে দেখাবেন। প্রয়োজনে কল করুন: ০১৭২৪-৩৬৩৮৩৮। ধন্যবাদ।";
+    return "https://wa.me/" + waPhone + "?text=" + encodeURIComponent(msg);
   }
 
   /* ------------ Toast & Error Alert Helpers ------------ */
@@ -428,11 +451,11 @@
     if (empty) empty.classList.add("hidden");
 
     tbody.innerHTML = list.map(function (row, idx) {
-      var serialNo = idx + 1;
+      var serialCode = getRowSerialCode(row, idx);
       var dateInfo = formatDateBadge(row.appointment_date);
       var createdStr = formatCreatedAt(row.created_at);
       var bnSub = lookupBanglaDoctorName(row.doctor_name);
-      var waLink = buildPatientWhatsAppLink(row);
+      var waLink = buildPatientWhatsAppLink(row, serialCode);
       var currentStatus = STATUSES.indexOf(row.status) !== -1 ? row.status : "Pending";
 
       var statusOptions = STATUSES.map(function (st) {
@@ -442,24 +465,21 @@
 
       return (
         '<tr class="hover:bg-slate-50/80 transition align-top">' +
-          // 0. Serial No (#)
-          '<td class="py-3.5 px-3 text-center font-extrabold text-slate-600">' +
-            serialNo +
+          // 0. Serial No (SL-XX Badge)
+          '<td class="py-3.5 px-3 text-center whitespace-nowrap">' +
+            '<span class="inline-flex items-center justify-center rounded-lg bg-brand-50 border border-brand-200 px-2 py-1 text-xs font-extrabold text-brand-800 whitespace-nowrap">' +
+              escapeHtml(serialCode) +
+            "</span>" +
           "</td>" +
 
           // 1. Patient & Phone
           '<td class="py-3.5 px-4">' +
             '<p class="font-bold text-slate-900 leading-snug">' + escapeHtml(row.patient_name || "—") + "</p>" +
             '<div class="mt-1 flex items-center gap-2 text-xs">' +
-              '<a href="tel:' + escapeHtml(normalizePhone(row.patient_phone)) + '" class="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline">' +
+              '<a href="tel:' + escapeHtml(normalizePhone(row.patient_phone)) + '" class="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline whitespace-nowrap">' +
                 '<svg class="no-print w-3.5 h-3.5"><use href="#i-phone"/></svg>' +
                 "<span>" + escapeHtml(row.patient_phone || "—") + "</span>" +
               "</a>" +
-              (waLink
-                ? '<a href="' + escapeHtml(waLink) + '" target="_blank" rel="noopener" title="Send WhatsApp update to patient" class="no-print inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100">' +
-                    '<svg class="w-3.5 h-3.5"><use href="#i-wa"/></svg>' +
-                  "</a>"
-                : "") +
             "</div>" +
           "</td>" +
 
@@ -500,9 +520,16 @@
             "</select>" +
           "</td>" +
 
-          // 6. Edit & Delete Actions (Hidden on Print)
+          // 6. Send Slip on WhatsApp + Edit + Delete Actions (Hidden on Print)
           '<td class="no-print py-3.5 px-4 text-right whitespace-nowrap">' +
             '<div class="inline-flex items-center gap-1.5">' +
+              (waLink
+                ? '<a href="' + escapeHtml(waLink) + '" target="_blank" rel="noopener" title="Send Slip on WhatsApp" ' +
+                    'class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 shadow-sm transition whitespace-nowrap">' +
+                    '<svg class="w-3.5 h-3.5"><use href="#i-wa"/></svg>' +
+                    '<span>Send Slip</span>' +
+                  "</a>"
+                : "") +
               '<button type="button" data-edit-id="' + escapeHtml(row.id) + '" title="Edit serial" ' +
                       'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-brand-50 hover:border-brand-200 text-slate-600 hover:text-brand-700 transition">' +
                 '<svg class="w-4 h-4"><use href="#i-edit"/></svg>' +
@@ -563,7 +590,7 @@
         : (row.doctor_name || "");
 
       lines.push([
-        String(idx + 1),
+        csvCell(getRowSerialCode(row, idx)),
         csvCell(row.patient_name),
         csvPhoneFormula(row.patient_phone),
         csvCell(doctorDisplay),
@@ -794,9 +821,27 @@
         .update(payload)
         .eq("id", targetId);
     } else {
+      // Assign next sequential daily serial_no for the same doctor & appointment_date
+      var maxSerial = 0;
+      appointments.forEach(function (r) {
+        if (
+          r.appointment_date === appointment_date &&
+          String(r.doctor_name || "").trim().toLowerCase() === doctor_name.toLowerCase()
+        ) {
+          var sn = parseInt(r.serial_no, 10);
+          if (!isNaN(sn) && sn > maxSerial) maxSerial = sn;
+        }
+      });
+      var insertPayload = Object.assign({}, payload, { serial_no: maxSerial + 1 });
       req = window.supabaseClient
         .from("appointments")
-        .insert([payload]);
+        .insert([insertPayload])
+        .then(function (res) {
+          if (res.error && /serial_no/i.test(res.error.message || "")) {
+            return window.supabaseClient.from("appointments").insert([payload]);
+          }
+          return res;
+        });
     }
 
     req
@@ -1094,6 +1139,118 @@
   // Expose helper on window for standard script compatibility
   window.moveDoctorOrder = moveDoctorOrder;
 
+  /* ------------ Live Chamber Queue ("Now Serving") Controls ------------ */
+  var queueUpdatingIds = {};
+
+  function renderLiveQueueControls() {
+    var grid = $("liveQueueControlGrid");
+    var datePill = $("liveQueueDatePill");
+    if (!grid) return;
+
+    var today = todayIso();
+    if (datePill) datePill.textContent = "Today: " + today;
+
+    var activeDocs = doctorsList.filter(function (d) {
+      return d.is_active !== false;
+    });
+
+    if (!activeDocs.length) {
+      grid.innerHTML =
+        '<p class="text-xs text-slate-500 col-span-full">No active doctors found in the <code>doctors</code> table yet. Add or activate doctors under the Manage Doctors tab.</p>';
+      return;
+    }
+
+    grid.innerHTML = activeDocs.map(function (doc) {
+      var isToday = String(doc.queue_updated_date || "").slice(0, 10) === today;
+      var currentNum = isToday && Number(doc.current_serial) > 0 ? Number(doc.current_serial) : 0;
+      var isBusy = !!queueUpdatingIds[String(doc.id)];
+      var slLabel = currentNum > 0 ? formatSerialCode(currentNum) : "শুরু হয়নি";
+      var badgeClass = currentNum > 0
+        ? "bg-emerald-100 border-emerald-300 text-emerald-900"
+        : "bg-slate-100 border-slate-200 text-slate-500";
+
+      return (
+        '<div class="min-w-0 bg-white rounded-xl border ' + (currentNum > 0 ? "border-emerald-200" : "border-slate-200") + ' p-3.5 shadow-sm flex flex-col justify-between gap-3">' +
+          '<div class="flex items-start justify-between gap-2 min-w-0">' +
+            '<div class="min-w-0 flex-1">' +
+              '<p class="font-bold text-slate-900 text-sm leading-snug truncate">' + escapeHtml(doc.name_bn || doc.name_en || "—") + "</p>" +
+              (doc.name_en && doc.name_en !== doc.name_bn
+                ? '<p class="text-[11px] font-semibold text-brand-700 truncate">' + escapeHtml(doc.name_en) + "</p>"
+                : "") +
+              (doc.room_no
+                ? '<p class="text-[11px] text-slate-400 truncate mt-0.5">' + escapeHtml(doc.room_no) + "</p>"
+                : "") +
+            "</div>" +
+            '<span class="inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-extrabold whitespace-nowrap shrink-0 ' + badgeClass + '">' +
+              escapeHtml(slLabel) +
+            "</span>" +
+          "</div>" +
+
+          '<div class="grid grid-cols-3 gap-1.5">' +
+            '<button type="button" data-queue-doctor="' + escapeHtml(doc.id) + '" data-queue-action="prev"' +
+                    ((currentNum <= 0 || isBusy) ? " disabled" : "") +
+                    ' class="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs py-2 px-2 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">-1</button>' +
+            '<button type="button" data-queue-doctor="' + escapeHtml(doc.id) + '" data-queue-action="next"' +
+                    (isBusy ? " disabled" : "") +
+                    ' class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-2 shadow-sm transition cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">+1 Next</button>' +
+            '<button type="button" data-queue-doctor="' + escapeHtml(doc.id) + '" data-queue-action="reset"' +
+                    ((currentNum <= 0 || isBusy) ? " disabled" : "") +
+                    ' class="rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs py-2 px-2 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Reset</button>' +
+          "</div>" +
+        "</div>"
+      );
+    }).join("");
+  }
+
+  function updateDoctorQueue(doctorId, action) {
+    if (!window.supabaseClient) return;
+    var key = String(doctorId);
+    if (queueUpdatingIds[key]) return;
+    var doc = findDoctorById(doctorId);
+    if (!doc) return;
+
+    var today = todayIso();
+    var isToday = String(doc.queue_updated_date || "").slice(0, 10) === today;
+    var currentNum = isToday && Number(doc.current_serial) > 0 ? Number(doc.current_serial) : 0;
+
+    var nextSerial = currentNum;
+    if (action === "next") nextSerial = currentNum + 1;
+    else if (action === "prev") nextSerial = Math.max(0, currentNum - 1);
+    else if (action === "reset") nextSerial = 0;
+
+    queueUpdatingIds[key] = true;
+    renderLiveQueueControls();
+
+    window.supabaseClient
+      .from("doctors")
+      .update({
+        current_serial: nextSerial,
+        queue_updated_date: today
+      })
+      .eq("id", doc.id)
+      .then(function (res) {
+        if (res.error) {
+          showToast("Queue update failed: " + res.error.message, true);
+          return;
+        }
+        doc.current_serial = nextSerial;
+        doc.queue_updated_date = today;
+        var label = nextSerial > 0
+          ? "Now Serving " + formatSerialCode(nextSerial)
+          : "Queue Reset";
+        showToast((doc.name_en || doc.name_bn) + " — " + label);
+      })
+      .catch(function (err) {
+        showToast((err && err.message) || "Failed to update live queue", true);
+      })
+      .finally(function () {
+        delete queueUpdatingIds[key];
+        renderLiveQueueControls();
+      });
+  }
+
+  window.updateDoctorQueue = updateDoctorQueue;
+
   function loadDoctors(silent) {
     if (!window.supabaseClient) return Promise.resolve();
     var icon = $("refreshIcon");
@@ -1114,6 +1271,7 @@
         if (activeTab === "doctors") setDbError("");
         doctorsList = Array.isArray(res.data) ? res.data : [];
         updateDoctorCounters();
+        renderLiveQueueControls();
         renderDoctorsTable();
         populateModalPresets();
         populateDoctorFilter();
@@ -1148,6 +1306,7 @@
         }
         doc.is_active = nextState;
         updateDoctorCounters();
+        renderLiveQueueControls();
         renderDoctorsTable();
         populateModalPresets();
         showToast((doc.name_en || doc.name_bn) + " is now " + (nextState ? "Active" : "Off-Duty"));
@@ -1459,6 +1618,7 @@
         if (target.type === "doctor") {
           doctorsList = doctorsList.filter(function (d) { return d.id !== target.row.id; });
           updateDoctorCounters();
+          renderLiveQueueControls();
           renderDoctorsTable();
           populateModalPresets();
           populateDoctorFilter();
@@ -1640,6 +1800,19 @@
     // Export CSV & Print Sheet buttons
     $("exportCsvBtn").addEventListener("click", exportFilteredToCsv);
     $("printSheetBtn").addEventListener("click", handlePrintList);
+
+    // Live Chamber Queue ("Now Serving") Controls
+    var queueGrid = $("liveQueueControlGrid");
+    if (queueGrid) {
+      queueGrid.addEventListener("click", function (e) {
+        var qBtn = e.target.closest("[data-queue-doctor]");
+        if (!qBtn || qBtn.disabled) return;
+        updateDoctorQueue(
+          qBtn.getAttribute("data-queue-doctor"),
+          qBtn.getAttribute("data-queue-action")
+        );
+      });
+    }
 
     // Manage Doctors toolbar & table events
     $("addDoctorBtn").addEventListener("click", openAddDoctorModal);

@@ -182,6 +182,8 @@
           }
         ],
         room_no: String(row.room_no || "").trim(),
+        current_serial: row.current_serial != null ? Number(row.current_serial) : 0,
+        queue_updated_date: row.queue_updated_date ? String(row.queue_updated_date).slice(0, 10) : "",
         poster: posterMatch ? posterMatch.poster : "",
         face: posterMatch ? posterMatch.face : null,
         fromSupabase: true
@@ -189,6 +191,94 @@
     });
 
     return { doctors: mapped, specialties: nextSpecs };
+  }
+
+  function formatSerialCode(serialNo) {
+    var n = parseInt(serialNo, 10);
+    if (isNaN(n) || n <= 0) return "";
+    return "SL-" + String(n).padStart(2, "0");
+  }
+
+  function todayLocalIso() {
+    return new Date().toLocaleDateString("en-CA");
+  }
+
+  function renderLiveQueueTicker() {
+    var section = $("liveQueueSection");
+    var grid = $("liveQueueGrid");
+    var timeEl = $("liveQueueTime");
+    if (!grid) return;
+
+    var lang = I18N.lang;
+    var today = todayLocalIso();
+
+    if (!activeDoctors.length) {
+      if (section) section.classList.add("hidden");
+      grid.innerHTML = "";
+      return;
+    }
+
+    if (section) section.classList.remove("hidden");
+
+    if (timeEl) {
+      timeEl.textContent =
+        "· " + new Date().toLocaleTimeString(lang === "bn" ? "bn-BD" : "en-US", {
+          hour: "numeric",
+          minute: "2-digit"
+        });
+    }
+
+    grid.innerHTML = activeDoctors.map(function (doc) {
+      var docName = doc.name[lang] || doc.name.bn || doc.name.en;
+      var specText = (doc.specialtyLabel && (doc.specialtyLabel[lang] || doc.specialtyLabel.bn || doc.specialtyLabel.en))
+        || (doc.focus && (doc.focus[lang] || doc.focus.bn)) || "";
+      var isToday = doc.queue_updated_date === today;
+      var currentNum = Number(doc.current_serial) || 0;
+      var isRunning = isToday && currentNum > 0;
+      var slCode = formatSerialCode(currentNum);
+
+      var badgeHtml = isRunning
+        ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-900 px-2.5 py-1 text-xs font-extrabold whitespace-nowrap">' +
+            '<span class="relative flex h-2 w-2 shrink-0">' +
+              '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>' +
+              '<span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>' +
+            "</span>" +
+            "<span>চলমান সিরিয়াল: " + escapeHtml(slCode) + "</span>" +
+          "</span>"
+        : '<span class="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 text-slate-500 px-2.5 py-1 text-xs font-semibold whitespace-nowrap">' +
+            "চেম্বার শুরু হয়নি" +
+          "</span>";
+
+      return (
+        '<div class="bg-white rounded-xl border ' + (isRunning ? "border-emerald-200 shadow-sm" : "border-slate-200/80") + ' p-3.5 flex items-center justify-between gap-3 min-w-0">' +
+          '<div class="min-w-0 flex-1">' +
+            '<p class="font-bold text-brand-950 text-sm leading-snug truncate">' + escapeHtml(docName) + "</p>" +
+            '<p class="text-[11px] text-slate-500 truncate mt-0.5">' +
+              escapeHtml(specText) + (doc.room_no ? " · " + escapeHtml(doc.room_no) : "") +
+            "</p>" +
+          "</div>" +
+          '<div class="shrink-0">' + badgeHtml + "</div>" +
+        "</div>"
+      );
+    }).join("");
+  }
+
+  function refreshLiveQueueSilently() {
+    if (!window.supabaseClient) return;
+
+    window.supabaseClient
+      .from("doctors")
+      .select("*")
+      .eq("is_active", true)
+      .order("display_order", { ascending: true })
+      .order("id", { ascending: true })
+      .then(function (res) {
+        if (res.error || !Array.isArray(res.data) || !res.data.length) return;
+        var mapped = mapSupabaseDoctors(res.data);
+        activeDoctors = mapped.doctors;
+        renderLiveQueueTicker();
+      })
+      .catch(function () { /* silent background poll */ });
   }
 
   function applyDoctorDirectoryUpdate(nextDoctors, nextSpecs) {
@@ -203,6 +293,7 @@
 
     updateLocalizedStatsAndLinks();
     renderSpecialtyControls();
+    renderLiveQueueTicker();
     renderDoctors();
     renderFormTargetOptions();
     updateDayHint();
@@ -791,6 +882,9 @@
     });
 
     if (lastFormResult.type === "success") {
+      var serialBadgeHtml = booking.serial_code
+        ? '<span class="inline-block rounded-lg bg-brand-700 text-white text-xs font-extrabold px-2.5 py-0.5 mr-2">' + escapeHtml(booking.serial_code) + "</span>"
+        : "";
       statusEl.className = "rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 text-emerald-950 shadow-sm";
       statusEl.innerHTML =
         '<div class="flex items-start gap-3">' +
@@ -798,17 +892,22 @@
             '<svg class="icon w-4 h-4"><use href="#i-check"/></svg>' +
           "</span>" +
           '<div class="min-w-0 flex-1">' +
-            '<p class="font-bold text-emerald-900 text-base">' + escapeHtml(I18N.t("form.successTitle")) + "</p>" +
+            '<p class="font-bold text-emerald-900 text-base">' + serialBadgeHtml + escapeHtml(I18N.t("form.successTitle")) + "</p>" +
             '<p class="mt-1 text-sm text-emerald-800 leading-relaxed">' +
               escapeHtml(I18N.t("form.successBody", { name: booking.name })) +
             "</p>" +
             '<p class="mt-2 inline-block text-xs font-semibold bg-white/80 border border-emerald-200 text-emerald-900 rounded-lg px-2.5 py-1">' +
               escapeHtml(summaryText) +
             "</p>" +
-            '<div class="mt-3.5 flex flex-col sm:flex-row sm:items-center gap-2.5">' +
-              '<a href="' + escapeHtml(waUrl) + '" target="_blank" rel="noopener" class="btn btn-wa justify-center text-sm py-2.5 flex-1">' +
+            '<div class="mt-3.5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">' +
+              (booking.serial_code
+                ? '<button type="button" data-open-slip class="btn btn-brand justify-center text-sm py-2.5">' +
+                    "<span>🎟️ " + escapeHtml(I18N.t("form.viewSlip")) + "</span>" +
+                  "</button>"
+                : "") +
+              '<a href="' + escapeHtml(buildSerialSlipWhatsAppUrl(booking)) + '" target="_blank" rel="noopener" class="btn btn-wa justify-center text-sm py-2.5 flex-1">' +
                 '<svg class="icon w-4 h-4"><use href="#i-wa"/></svg>' +
-                "<span>" + escapeHtml(I18N.t("form.successWaBtn")) + "</span>" +
+                "<span>📲 WhatsApp-এ স্লিপ পাঠান</span>" +
               "</a>" +
               '<button type="button" data-reset-serial class="btn btn-outline justify-center text-xs sm:text-sm py-2.5">' +
                 escapeHtml(I18N.t("form.bookAnother")) +
@@ -851,20 +950,92 @@
     }
   }
 
+  function extractSerialNo(rpcData) {
+    if (typeof rpcData === "number" && !isNaN(rpcData)) return rpcData;
+    if (typeof rpcData === "string" && /^\d+$/.test(rpcData.trim())) return parseInt(rpcData.trim(), 10);
+    if (Array.isArray(rpcData) && rpcData.length) {
+      var first = rpcData[0];
+      if (typeof first === "number") return first;
+      if (first && first.serial_no != null) return parseInt(first.serial_no, 10);
+      if (first && first.create_public_booking != null) return parseInt(first.create_public_booking, 10);
+    }
+    if (rpcData && typeof rpcData === "object") {
+      if (rpcData.serial_no != null) return parseInt(rpcData.serial_no, 10);
+      if (rpcData.create_public_booking != null) return parseInt(rpcData.create_public_booking, 10);
+    }
+    return null;
+  }
+
+  function buildSerialSlipWhatsAppUrl(booking) {
+    var serialLine = booking.serial_code ? "• সিরিয়াল নম্বর: " + booking.serial_code : "";
+    var doctorDisplay = booking.resolved ? booking.resolved.labelFor("bn") : booking.doctor_name;
+    var lines = [
+      "আসসালামু আলাইকুম, ডেলটা মেডিকেল সেন্টার এন্ড মা ও শিশু হাসপাতাল (শিবগঞ্জ)।",
+      "ডিজিটাল সিরিয়াল স্লিপ:",
+      ""
+    ];
+    if (serialLine) lines.push(serialLine);
+    lines.push("• রোগীর নাম: " + booking.name);
+    lines.push("• মোবাইল: " + booking.phone);
+    lines.push("• ডাক্তার: " + (booking.doctor_name || doctorDisplay));
+    lines.push("• বিভাগ: " + (booking.department || ""));
+    lines.push("• তারিখ: " + booking.dateVal);
+    lines.push("");
+    lines.push("অনুগ্রহ করে সিরিয়ালটি নিশ্চিত করুন। ধন্যবাদ।");
+    return "https://wa.me/" + WA_NUMBER + "?text=" + encodeURIComponent(lines.join("\n"));
+  }
+
+  function openSerialSlipModal(booking) {
+    var dlg = $("serialSlipModal");
+    if (!dlg || !booking) return;
+
+    var serialCode = booking.serial_code || formatSerialCode(booking.serial_no) || "SL-01";
+    var badgeEl = $("slipSerialBadge");
+    if (badgeEl) badgeEl.textContent = serialCode;
+    if ($("slipPatientName")) $("slipPatientName").textContent = booking.name || "—";
+    if ($("slipPatientPhone")) $("slipPatientPhone").textContent = booking.phone || "—";
+    if ($("slipDoctorName")) $("slipDoctorName").textContent = booking.doctor_name || "—";
+    if ($("slipDepartment")) $("slipDepartment").textContent = booking.department || "—";
+    if ($("slipDate")) $("slipDate").textContent = formatBookingDateDisplay(booking.dateVal);
+
+    var waBtn = $("slipWaBtn");
+    if (waBtn) waBtn.setAttribute("href", buildSerialSlipWhatsAppUrl(booking));
+
+    if (typeof dlg.showModal === "function") {
+      if (!dlg.open) dlg.showModal();
+    }
+  }
+
+  function closeSerialSlipModal() {
+    var dlg = $("serialSlipModal");
+    if (dlg && dlg.open) dlg.close();
+  }
+
+  function printSerialSlip() {
+    document.body.classList.add("printing-slip");
+    var cleanup = function () {
+      document.body.classList.remove("printing-slip");
+    };
+    window.addEventListener("afterprint", cleanup, { once: true });
+    window.print();
+    setTimeout(cleanup, 1500);
+  }
+
+  window.openSerialSlipModal = openSerialSlipModal;
+  window.closeSerialSlipModal = closeSerialSlipModal;
+  window.printSerialSlip = printSerialSlip;
+
   function insertAppointmentToSupabase(booking) {
     if (!window.supabaseClient) {
       return Promise.resolve({ error: { message: "Supabase client unavailable" } });
     }
-    return window.supabaseClient
-      .from("appointments")
-      .insert([{
-        patient_name: booking.name,
-        patient_phone: booking.phone,
-        doctor_name: booking.doctor_name,
-        department: booking.department,
-        appointment_date: booking.dateVal,
-        status: "Pending"
-      }]);
+    return window.supabaseClient.rpc("create_public_booking", {
+      p_patient_name: booking.name,
+      p_patient_phone: booking.phone,
+      p_doctor_name: booking.doctor_name,
+      p_department: booking.department,
+      p_appointment_date: booking.dateVal
+    });
   }
 
   function handleSerialSubmit(e) {
@@ -884,6 +1055,9 @@
             reason: res.error.message || "Database error"
           };
         } else {
+          var serialNo = extractSerialNo(res ? res.data : null);
+          booking.serial_no = serialNo;
+          booking.serial_code = formatSerialCode(serialNo) || "SL-01";
           lastFormResult = {
             type: "success",
             booking: booking
@@ -892,6 +1066,7 @@
           var phoneInput = $("fPhone");
           if (nameInput) nameInput.value = "";
           if (phoneInput) phoneInput.value = "";
+          openSerialSlipModal(booking);
         }
         renderFormStatus();
       })
@@ -917,11 +1092,14 @@
     var waUrl = buildWhatsAppUrl(booking);
     window.open(waUrl, "_blank", "noopener");
 
-    // Also log the serial in Supabase so reception sees it in admin.html
+    // Also log the serial in Supabase via RPC so reception sees it in admin.html
     setSubmittingState(true);
     insertAppointmentToSupabase(booking)
       .then(function (res) {
         if (!res || !res.error) {
+          var serialNo = extractSerialNo(res ? res.data : null);
+          booking.serial_no = serialNo;
+          booking.serial_code = formatSerialCode(serialNo) || "SL-01";
           lastFormResult = { type: "success", booking: booking };
           var nameInput = $("fName");
           var phoneInput = $("fPhone");
@@ -958,6 +1136,7 @@
       updateLocalizedStatsAndLinks();
       renderSpecialtyControls();
       renderDayChips();
+      renderLiveQueueTicker();
       renderDoctors();
       renderFormTargetOptions();
       updateDayHint();
@@ -1043,6 +1222,12 @@
         return;
       }
 
+      var openSlipBtn = e.target.closest("[data-open-slip]");
+      if (openSlipBtn && lastFormResult && lastFormResult.booking) {
+        openSerialSlipModal(lastFormResult.booking);
+        return;
+      }
+
       var resetSerialBtn = e.target.closest("[data-reset-serial]");
       if (resetSerialBtn) {
         lastFormResult = null;
@@ -1059,6 +1244,17 @@
       closeBtn.addEventListener("click", function () { dlg.close(); });
       dlg.addEventListener("click", function (e) {
         if (e.target === dlg) dlg.close();
+      });
+    }
+
+    // Digital Serial Slip modal events
+    var slipModal = $("serialSlipModal");
+    if (slipModal) {
+      if ($("slipCloseBtn")) $("slipCloseBtn").addEventListener("click", closeSerialSlipModal);
+      if ($("slipDoneBtn")) $("slipDoneBtn").addEventListener("click", closeSerialSlipModal);
+      if ($("slipPrintBtn")) $("slipPrintBtn").addEventListener("click", printSerialSlip);
+      slipModal.addEventListener("click", function (e) {
+        if (e.target === slipModal) closeSerialSlipModal();
       });
     }
 
@@ -1127,6 +1323,14 @@
     // Apply initial language (Bangla by default, or saved preference), then load live doctors from Supabase
     I18N.apply();
     loadActiveDoctorsFromSupabase();
+
+    // Auto-refresh live chamber queue silently every 20 seconds
+    setInterval(function () {
+      if (!document.hidden) refreshLiveQueueSilently();
+    }, 20000);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) refreshLiveQueueSilently();
+    });
   }
 
   if (document.readyState === "loading") {

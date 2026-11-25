@@ -544,3 +544,34 @@ html[lang="en"] body {
   background: rgba(11, 42, 70, 0.78);
   backdrop-filter: blur(4px);
 }
+
+/* Digital Serial Slip Modal & Clean Slip Printing */
+dialog.slip-dialog:not([open]) {
+  display: none !important;
+}
+dialog.slip-dialog::backdrop {
+  background: transparent;
+}
+
+@media print {
+  body.printing-slip > *:not(#serialSlipModal) {
+    display: none !important;
+  }
+  body.printing-slip #serialSlipModal {
+    position: static !important;
+    display: block !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  body.printing-slip #serialSlipCard {
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: 2px solid #0f172a !important;
+    margin: 0 auto !important;
+  }
+  body.printing-slip .no-print {
+    display: none !important;
+  }
+}
