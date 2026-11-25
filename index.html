@@ -190,13 +190,13 @@
 
           <p class="mt-4 text-base sm:text-lg text-slate-600 max-w-2xl" data-i18n="hero.lead">গর্ভকালীন সেবা, স্ত্রী ও প্রসূতি রোগ, নবজাতক ও শিশুর চিকিৎসা — সাথে ৪ডি আল্ট্রাসনোগ্রাফি, ডিজিটাল এক্স-রে ও প্যাথলজি ল্যাব। শিবগঞ্জের হাসপাতাল রোডে, আপনার খুব কাছেই।</p>
 
-          <div class="mt-7 flex flex-col sm:flex-row gap-3">
-            <a href="tel:+8801724363838" class="btn btn-red btn-lg justify-center">
-              <svg class="icon w-5 h-5"><use href="#i-phone"/></svg>
-              <span data-i18n="hero.call">সিরিয়াল দিন — কল করুন</span>
+          <div class="mt-6 sm:mt-7 grid grid-cols-2 sm:flex sm:flex-wrap gap-2.5 sm:gap-3">
+            <a href="#serial" class="btn btn-brand btn-hero justify-center whitespace-nowrap">
+              <svg class="icon w-4 h-4 sm:w-5 sm:h-5"><use href="#i-cal"/></svg>
+              <span data-i18n="hero.onlineSerial">অনলাইনে সিরিয়াল</span>
             </a>
-            <a href="https://wa.me/8801724363838" data-wa-quick target="_blank" rel="noopener" class="btn btn-wa btn-lg justify-center">
-              <svg class="icon w-5 h-5"><use href="#i-wa"/></svg>
+            <a href="https://wa.me/8801724363838" data-wa-quick target="_blank" rel="noopener" class="btn btn-wa btn-hero justify-center whitespace-nowrap">
+              <svg class="icon w-4 h-4 sm:w-5 sm:h-5"><use href="#i-wa"/></svg>
               <span data-i18n="hero.wa">হোয়াটসঅ্যাপে সিরিয়াল</span>
             </a>
           </div>
@@ -255,32 +255,31 @@
       </div>
     </section>
 
+    <!-- ============ LIVE NOW-SERVING BAR (Visible ONLY when a chamber is active) ============ -->
+    <section id="liveQueueSection" aria-label="Live Chamber Queue" class="hidden bg-slate-50 pt-6 sm:pt-8 pb-2">
+      <div class="mx-auto max-w-7xl px-4">
+        <div class="bg-gradient-to-r from-emerald-50/75 via-white to-white text-slate-800 rounded-2xl border border-emerald-200/80 shadow-sm px-4 sm:px-5 py-3.5 sm:py-4 flex items-center gap-3.5">
+          <span class="inline-flex items-center gap-2 rounded-full bg-emerald-100/90 border border-emerald-200 px-3 py-1.5 text-xs font-bold text-emerald-800 shrink-0">
+            <span class="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span data-i18n="queue.shortLabel">চলছে</span>
+          </span>
+          <div id="liveQueueGrid" class="queue-strip flex-1 min-w-0 flex items-center gap-2.5 overflow-x-auto py-1"></div>
+          <button type="button" id="openQueueDrawerFromBar" class="hidden sm:inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline whitespace-nowrap shrink-0 cursor-pointer" data-i18n="queue.viewAll">সব দেখুন</button>
+        </div>
+      </div>
+    </section>
+
     <!-- ============ 3. DOCTOR CHAMBER DIRECTORY ============ -->
-    <section id="doctors" class="py-14 lg:py-20 bg-slate-50 scroll-mt-20">
+    <section id="doctors" class="pt-10 pb-14 lg:pt-12 lg:pb-20 bg-slate-50 scroll-mt-20">
       <div class="mx-auto max-w-7xl px-4">
         <header class="section-head">
           <p class="eyebrow" data-i18n="doc.eyebrow">বিশেষজ্ঞ চেম্বার</p>
           <h2 class="section-title" data-i18n="doc.title">ডাক্তারদের চেম্বার তালিকা</h2>
           <p class="section-lead" data-i18n="doc.lead">বিভাগ বা বার অনুযায়ী খুঁজুন, তারপর এক ট্যাপে সিরিয়াল দিন।</p>
         </header>
-
-        <!-- Live Chamber Queue Ticker ("বর্তমান সিরিয়াল চলছে") -->
-        <div id="liveQueueSection" class="mt-7 rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50/80 via-white to-brand-50/50 p-4 sm:p-5 shadow-sm">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-center gap-2.5 min-w-0">
-              <span class="relative flex h-3 w-3 shrink-0" aria-hidden="true">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-600"></span>
-              </span>
-              <h3 class="font-extrabold text-brand-950 text-base sm:text-lg leading-snug" data-i18n="queue.title">বর্তমান সিরিয়াল চলছে (Now Serving)</h3>
-            </div>
-            <p class="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-              <span data-i18n="queue.subtitle">লাইভ আপডেট · প্রতি ২০ সেকেন্ডে</span>
-              <span id="liveQueueTime" class="text-emerald-700 font-bold"></span>
-            </p>
-          </div>
-          <div id="liveQueueGrid" class="mt-3.5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
-        </div>
 
         <!-- Filters -->
         <div class="mt-8 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
@@ -545,6 +544,50 @@
       </div>
     </div>
   </footer>
+
+  <!-- ============ FLOATING LIVE CHAMBER QUEUE WIDGET ============ -->
+  <div id="liveQueueWidget" class="no-print fixed bottom-[74px] md:bottom-6 right-3 sm:right-5 z-40 flex flex-col items-end">
+    <!-- Slide-up Live Queue Popover -->
+    <div id="liveQueuePopover" class="hidden live-popover fixed bottom-[128px] md:bottom-[78px] left-3 right-3 sm:left-auto sm:right-5 sm:w-[360px] max-h-[65vh] rounded-2xl bg-white text-slate-800 shadow-[0_20px_50px_-12px_rgba(15,23,42,0.22)] border border-emerald-200/80 flex flex-col overflow-hidden" role="dialog" aria-labelledby="queuePopoverTitle">
+      <div class="bg-emerald-50/70 border-b border-emerald-100 px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+        <div class="min-w-0">
+          <p class="flex items-center gap-2 font-bold text-slate-900 text-sm leading-snug" id="queuePopoverTitle">
+            <span class="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span data-i18n="queue.title">বর্তমান সিরিয়াল চলছে</span>
+          </p>
+          <p class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+            <span data-i18n="queue.subtitle">প্রতি ২০ সেকেন্ডে আপডেট</span>
+            <span id="liveQueueTime" class="text-emerald-700 font-semibold"></span>
+          </p>
+        </div>
+        <button type="button" id="closeQueuePopoverBtn" class="w-8 h-8 rounded-full hover:bg-emerald-100/80 text-slate-500 hover:text-emerald-900 grid place-items-center shrink-0 cursor-pointer transition" data-i18n-aria="lb.close" aria-label="বন্ধ করুন">
+          <svg class="icon w-4 h-4"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div id="liveQueuePopoverList" class="p-3 space-y-2 overflow-y-auto flex-1 bg-slate-50/60"></div>
+    </div>
+
+    <!-- Brief Auto Pop-up Teaser Bubble -->
+    <button type="button" id="liveQueueTeaser"
+            class="hidden live-teaser relative mb-2.5 max-w-[240px] rounded-xl bg-emerald-950 text-white px-3 py-1.5 text-xs font-semibold shadow-lg border border-emerald-700/60 cursor-pointer text-left">
+      <span id="liveQueueTeaserText" data-i18n="queue.teaserIdle">লাইভ চেম্বার সিরিয়াল দেখুন</span>
+      <span class="absolute right-6 -bottom-1.5 w-3 h-3 rotate-45 bg-emerald-950 border-r border-b border-emerald-700/60" aria-hidden="true"></span>
+    </button>
+
+    <!-- Floating Live-Green Pill Button -->
+    <button type="button" id="liveQueueFab" aria-expanded="false" aria-controls="liveQueuePopover"
+            class="live-fab inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white pl-3.5 pr-4 py-2.5 text-xs sm:text-sm font-bold border border-emerald-300/40 transition cursor-pointer">
+      <span id="liveQueueFabDot" class="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-80"></span>
+        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
+      </span>
+      <span id="liveQueueFabLabel" class="inline-flex items-center gap-1.5" data-i18n="queue.fabIdle">লাইভ সিরিয়াল</span>
+      <svg class="live-fab-chev icon w-3.5 h-3.5 opacity-90 shrink-0 transition-transform duration-200 rotate-180" aria-hidden="true"><use href="#i-down"/></svg>
+    </button>
+  </div>
 
   <!-- ============ MOBILE ACTION BAR ============ -->
   <div class="mobile-bar md:hidden" role="navigation" aria-label="Quick actions">

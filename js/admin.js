@@ -1145,14 +1145,31 @@
   function renderLiveQueueControls() {
     var grid = $("liveQueueControlGrid");
     var datePill = $("liveQueueDatePill");
+    var activeCountEl = $("liveQueueActiveCount");
     if (!grid) return;
 
     var today = todayIso();
-    if (datePill) datePill.textContent = "Today: " + today;
+    if (datePill) datePill.textContent = today;
 
     var activeDocs = doctorsList.filter(function (d) {
       return d.is_active !== false;
     });
+
+    var runningCount = activeDocs.filter(function (doc) {
+      return String(doc.queue_updated_date || "").slice(0, 10) === today && Number(doc.current_serial) > 0;
+    }).length;
+
+    if (activeCountEl) {
+      if (runningCount > 0) {
+        activeCountEl.textContent = runningCount + " Live";
+        activeCountEl.className =
+          "inline-flex items-center rounded-full bg-emerald-100/90 border border-emerald-200 text-emerald-800 px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap";
+      } else {
+        activeCountEl.textContent = "Standby";
+        activeCountEl.className =
+          "inline-flex items-center rounded-full bg-slate-100 text-slate-500 px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap";
+      }
+    }
 
     if (!activeDocs.length) {
       grid.innerHTML =
@@ -1164,38 +1181,49 @@
       var isToday = String(doc.queue_updated_date || "").slice(0, 10) === today;
       var currentNum = isToday && Number(doc.current_serial) > 0 ? Number(doc.current_serial) : 0;
       var isBusy = !!queueUpdatingIds[String(doc.id)];
-      var slLabel = currentNum > 0 ? formatSerialCode(currentNum) : "শুরু হয়নি";
-      var badgeClass = currentNum > 0
-        ? "bg-emerald-100 border-emerald-300 text-emerald-900"
-        : "bg-slate-100 border-slate-200 text-slate-500";
+      var isLive = currentNum > 0;
+      var slLabel = isLive ? formatSerialCode(currentNum) : "শুরু হয়নি";
+
+      var badgeHtml = isLive
+        ? '<span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 text-emerald-800 px-2 py-0.5 text-[11px] font-extrabold whitespace-nowrap shrink-0">' +
+            '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>' +
+            "<span>" + escapeHtml(slLabel) + "</span>" +
+          "</span>"
+        : '<span class="inline-flex items-center rounded-full bg-slate-100 text-slate-500 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap shrink-0">' +
+            escapeHtml(slLabel) +
+          "</span>";
+
+      var subParts = [];
+      if (doc.name_en && doc.name_en !== doc.name_bn) subParts.push(doc.name_en);
+      if (doc.room_no) subParts.push(doc.room_no);
+      var subText = subParts.join(" · ");
 
       return (
-        '<div class="min-w-0 bg-white rounded-xl border ' + (currentNum > 0 ? "border-emerald-200" : "border-slate-200") + ' p-3.5 shadow-sm flex flex-col justify-between gap-3">' +
-          '<div class="flex items-start justify-between gap-2 min-w-0">' +
-            '<div class="min-w-0 flex-1">' +
-              '<p class="font-bold text-slate-900 text-sm leading-snug truncate">' + escapeHtml(doc.name_bn || doc.name_en || "—") + "</p>" +
-              (doc.name_en && doc.name_en !== doc.name_bn
-                ? '<p class="text-[11px] font-semibold text-brand-700 truncate">' + escapeHtml(doc.name_en) + "</p>"
-                : "") +
-              (doc.room_no
-                ? '<p class="text-[11px] text-slate-400 truncate mt-0.5">' + escapeHtml(doc.room_no) + "</p>"
-                : "") +
-            "</div>" +
-            '<span class="inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-extrabold whitespace-nowrap shrink-0 ' + badgeClass + '">' +
-              escapeHtml(slLabel) +
-            "</span>" +
+        '<div class="min-w-0 rounded-xl border ' +
+          (isLive ? "bg-emerald-50/40 border-emerald-200" : "bg-white border-slate-200/90 hover:border-slate-300") +
+          ' px-3 py-2.5 flex flex-col gap-2 transition">' +
+          '<div class="flex items-center justify-between gap-2 min-w-0">' +
+            '<p class="font-bold text-slate-900 text-base leading-snug truncate min-w-0 flex-1" title="' + escapeHtml(doc.name_bn || doc.name_en || "") + '">' +
+              escapeHtml(doc.name_bn || doc.name_en || "—") +
+            "</p>" +
+            badgeHtml +
           "</div>" +
 
-          '<div class="grid grid-cols-3 gap-1.5">' +
-            '<button type="button" data-queue-doctor="' + escapeHtml(doc.id) + '" data-queue-action="prev"' +
-                    ((currentNum <= 0 || isBusy) ? " disabled" : "") +
-                    ' class="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs py-2 px-2 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">-1</button>' +
-            '<button type="button" data-queue-doctor="' + escapeHtml(doc.id) + '" data-queue-action="next"' +
-                    (isBusy ? " disabled" : "") +
-                    ' class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-2 shadow-sm transition cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">+1 Next</button>' +
-            '<button type="button" data-queue-doctor="' + escapeHtml(doc.id) + '" data-queue-action="reset"' +
-                    ((currentNum <= 0 || isBusy) ? " disabled" : "") +
-                    ' class="rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs py-2 px-2 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Reset</button>' +
+          '<div class="flex items-center justify-between gap-2 min-w-0">' +
+            '<p class="text-[11px] text-slate-500 truncate min-w-0 flex-1">' +
+              (subText ? escapeHtml(subText) : "&nbsp;") +
+            "</p>" +
+            '<div class="inline-flex items-center gap-1 shrink-0">' +
+              '<button type="button" data-queue-doctor="' + escapeHtml(doc.id) + '" data-queue-action="prev"' +
+                      ((currentNum <= 0 || isBusy) ? " disabled" : "") +
+                      ' class="h-7 px-2 rounded-md border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-[11px] leading-none transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">-1</button>' +
+              '<button type="button" data-queue-doctor="' + escapeHtml(doc.id) + '" data-queue-action="next"' +
+                      (isBusy ? " disabled" : "") +
+                      ' class="h-7 px-2.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] leading-none shadow-sm transition cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">+1 Next</button>' +
+              '<button type="button" data-queue-doctor="' + escapeHtml(doc.id) + '" data-queue-action="reset"' +
+                      ((currentNum <= 0 || isBusy) ? " disabled" : "") +
+                      ' class="h-7 px-2 rounded-md border border-slate-200 bg-white hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 text-slate-500 font-semibold text-[11px] leading-none transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Reset</button>' +
+            "</div>" +
           "</div>" +
         "</div>"
       );
@@ -1811,6 +1839,15 @@
           qBtn.getAttribute("data-queue-doctor"),
           qBtn.getAttribute("data-queue-action")
         );
+      });
+    }
+    var toggleQueuePanelBtn = $("toggleLiveQueuePanelBtn");
+    var queueControlBody = $("liveQueueControlBody");
+    if (toggleQueuePanelBtn && queueControlBody) {
+      toggleQueuePanelBtn.addEventListener("click", function () {
+        var isHidden = queueControlBody.classList.toggle("hidden");
+        toggleQueuePanelBtn.setAttribute("aria-expanded", isHidden ? "false" : "true");
+        toggleQueuePanelBtn.textContent = isHidden ? "Show" : "Hide";
       });
     }
 

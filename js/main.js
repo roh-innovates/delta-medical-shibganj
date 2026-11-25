@@ -203,22 +203,77 @@
     return new Date().toLocaleDateString("en-CA");
   }
 
+  function isDoctorQueueRunningToday(doc) {
+    return doc && doc.queue_updated_date === todayLocalIso() && (Number(doc.current_serial) || 0) > 0;
+  }
+
+  var queueTeaserShown = false;
+  var queueTeaserTimer = null;
+
+  function hideQueueTeaser() {
+    var teaser = $("liveQueueTeaser");
+    if (teaser) teaser.classList.add("hidden");
+    if (queueTeaserTimer) {
+      clearTimeout(queueTeaserTimer);
+      queueTeaserTimer = null;
+    }
+  }
+
+  function scheduleQueueTeaser(hasLive) {
+    if (queueTeaserShown) return;
+    var teaser = $("liveQueueTeaser");
+    var teaserText = $("liveQueueTeaserText");
+    var popover = $("liveQueuePopover");
+    if (!teaser || !teaserText) return;
+    if (popover && !popover.classList.contains("hidden")) return;
+
+    queueTeaserShown = true;
+    teaserText.textContent = I18N.t(hasLive ? "queue.teaserLive" : "queue.teaserIdle");
+    setTimeout(function () {
+      if (popover && !popover.classList.contains("hidden")) return;
+      teaser.classList.remove("hidden");
+      queueTeaserTimer = setTimeout(hideQueueTeaser, 5500);
+    }, 1400);
+  }
+
+  function setQueuePopoverOpen(open) {
+    var popover = $("liveQueuePopover");
+    var fab = $("liveQueueFab");
+    if (!popover || !fab) return;
+    if (open) hideQueueTeaser();
+    popover.classList.toggle("hidden", !open);
+    fab.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
   function renderLiveQueueTicker() {
     var section = $("liveQueueSection");
     var grid = $("liveQueueGrid");
     var timeEl = $("liveQueueTime");
-    if (!grid) return;
+    var popoverList = $("liveQueuePopoverList");
+    var fabDot = $("liveQueueFabDot");
+    var fabLabel = $("liveQueueFabLabel");
+    var widget = $("liveQueueWidget");
 
     var lang = I18N.lang;
-    var today = todayLocalIso();
 
     if (!activeDoctors.length) {
       if (section) section.classList.add("hidden");
-      grid.innerHTML = "";
+      if (widget) widget.classList.add("hidden");
+      if (grid) grid.innerHTML = "";
+      if (popoverList) popoverList.innerHTML = "";
       return;
     }
 
-    if (section) section.classList.remove("hidden");
+    if (widget) widget.classList.remove("hidden");
+
+    // Separate currently running chambers vs standby chambers (preserving display_order)
+    var runningDocs = [];
+    var standbyDocs = [];
+    activeDoctors.forEach(function (doc) {
+      if (isDoctorQueueRunningToday(doc)) runningDocs.push(doc);
+      else standbyDocs.push(doc);
+    });
+    var orderedAll = runningDocs.concat(standbyDocs);
 
     if (timeEl) {
       timeEl.textContent =
@@ -228,39 +283,103 @@
         });
     }
 
-    grid.innerHTML = activeDoctors.map(function (doc) {
-      var docName = doc.name[lang] || doc.name.bn || doc.name.en;
-      var specText = (doc.specialtyLabel && (doc.specialtyLabel[lang] || doc.specialtyLabel.bn || doc.specialtyLabel.en))
-        || (doc.focus && (doc.focus[lang] || doc.focus.bn)) || "";
-      var isToday = doc.queue_updated_date === today;
-      var currentNum = Number(doc.current_serial) || 0;
-      var isRunning = isToday && currentNum > 0;
-      var slCode = formatSerialCode(currentNum);
+    // 1. Slim top bar: shown ONLY when >= 1 chamber is actively running right now
+    if (section && grid) {
+      if (runningDocs.length > 0) {
+        section.classList.remove("hidden");
+        grid.innerHTML = runningDocs.map(function (doc) {
+          var docName = doc.name[lang] || doc.name.bn || doc.name.en;
+          var slCode = formatSerialCode(doc.current_serial);
+          return (
+            '<button type="button" data-book-doc="' + escapeHtml(doc.id) + '" ' +
+                    'class="inline-flex items-center gap-2.5 rounded-full bg-white hover:bg-emerald-50/80 border border-emerald-200/80 hover:border-emerald-300 pl-3.5 pr-2.5 py-1.5 text-xs sm:text-sm transition shrink-0 cursor-pointer whitespace-nowrap shadow-[0_1px_2px_rgba(16,185,129,0.08)]">' +
+              '<span class="font-semibold text-slate-800">' + escapeHtml(docName) + "</span>" +
+              '<span class="rounded-full bg-emerald-600 text-white font-bold px-2.5 py-0.5 text-xs tracking-wide">' +
+                escapeHtml(slCode) +
+              "</span>" +
+            "</button>"
+          );
+        }).join("");
+      } else {
+        section.classList.add("hidden");
+        grid.innerHTML = "";
+      }
+    }
 
-      var badgeHtml = isRunning
-        ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-900 px-2.5 py-1 text-xs font-extrabold whitespace-nowrap">' +
-            '<span class="relative flex h-2 w-2 shrink-0">' +
-              '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>' +
-              '<span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>' +
-            "</span>" +
-            "<span>চলমান সিরিয়াল: " + escapeHtml(slCode) + "</span>" +
-          "</span>"
-        : '<span class="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 text-slate-500 px-2.5 py-1 text-xs font-semibold whitespace-nowrap">' +
-            "চেম্বার শুরু হয়নি" +
-          "</span>";
+    // 2. Floating live-green corner pill
+    var fabBtn = $("liveQueueFab");
+    var teaserText = $("liveQueueTeaserText");
+    if (teaserText) {
+      teaserText.textContent = I18N.t(runningDocs.length > 0 ? "queue.teaserLive" : "queue.teaserIdle");
+    }
+    if (fabDot && fabLabel) {
+      if (runningDocs.length > 0) {
+        fabDot.innerHTML =
+          '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-85"></span>' +
+          '<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>';
+        if (fabBtn) {
+          fabBtn.classList.add("live-fab--live");
+        }
+        if (runningDocs.length === 1) {
+          fabLabel.innerHTML =
+            '<span>চলমান</span> <span class="rounded-full bg-white text-emerald-700 font-extrabold px-2 py-0.5 text-[11px] leading-none">' +
+            escapeHtml(formatSerialCode(runningDocs[0].current_serial)) +
+            "</span>";
+        } else {
+          fabLabel.innerHTML =
+            "<span>" + escapeHtml(I18N.t("queue.fabIdle")) + "</span> " +
+            '<span class="rounded-full bg-white text-emerald-700 font-extrabold px-2 py-0.5 text-[11px] leading-none">' +
+            escapeHtml(I18N.num(runningDocs.length)) +
+            "</span>";
+        }
+      } else {
+        fabDot.innerHTML =
+          '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75"></span>' +
+          '<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-200"></span>';
+        if (fabBtn) {
+          fabBtn.classList.remove("live-fab--live");
+        }
+        fabLabel.textContent = I18N.t("queue.fabIdle");
+      }
+    }
+    scheduleQueueTeaser(runningDocs.length > 0);
 
-      return (
-        '<div class="bg-white rounded-xl border ' + (isRunning ? "border-emerald-200 shadow-sm" : "border-slate-200/80") + ' p-3.5 flex items-center justify-between gap-3 min-w-0">' +
-          '<div class="min-w-0 flex-1">' +
-            '<p class="font-bold text-brand-950 text-sm leading-snug truncate">' + escapeHtml(docName) + "</p>" +
-            '<p class="text-[11px] text-slate-500 truncate mt-0.5">' +
-              escapeHtml(specText) + (doc.room_no ? " · " + escapeHtml(doc.room_no) : "") +
-            "</p>" +
-          "</div>" +
-          '<div class="shrink-0">' + badgeHtml + "</div>" +
-        "</div>"
-      );
-    }).join("");
+    // 3. Slide-up popover drawer list (all active doctors, running first)
+    if (popoverList) {
+      popoverList.innerHTML = orderedAll.map(function (doc) {
+        var docName = doc.name[lang] || doc.name.bn || doc.name.en;
+        var specText = (doc.specialtyLabel && (doc.specialtyLabel[lang] || doc.specialtyLabel.bn || doc.specialtyLabel.en))
+          || (doc.focus && (doc.focus[lang] || doc.focus.bn)) || "";
+        var isRunning = isDoctorQueueRunningToday(doc);
+        var slCode = formatSerialCode(doc.current_serial);
+
+        var badgeHtml = isRunning
+          ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap">' +
+              '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>' +
+              "<span>চলমান সিরিয়াল: " + escapeHtml(slCode) + "</span>" +
+            "</span>"
+          : '<span class="inline-flex items-center rounded-full bg-slate-100 text-slate-500 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap">' +
+              "চেম্বার শুরু হয়নি" +
+            "</span>";
+
+        return (
+          '<div class="rounded-xl bg-white border ' + (isRunning ? "border-emerald-200 shadow-sm" : "border-slate-200/80") + ' p-3 flex items-center justify-between gap-2.5">' +
+            '<div class="min-w-0 flex-1">' +
+              '<p class="font-bold text-slate-900 text-xs sm:text-sm leading-snug truncate">' + escapeHtml(docName) + "</p>" +
+              '<p class="text-[11px] text-slate-500 truncate mt-0.5">' +
+                escapeHtml(specText) + (doc.room_no ? " · " + escapeHtml(doc.room_no) : "") +
+              "</p>" +
+            "</div>" +
+            '<div class="flex flex-col items-end gap-1 shrink-0">' +
+              badgeHtml +
+              '<button type="button" data-book-doc="' + escapeHtml(doc.id) + '" class="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer">' +
+                escapeHtml(I18N.t("doc.serial")) + " →" +
+              "</button>" +
+            "</div>" +
+          "</div>"
+        );
+      }).join("");
+    }
   }
 
   function refreshLiveQueueSilently() {
@@ -277,6 +396,7 @@
         var mapped = mapSupabaseDoctors(res.data);
         activeDoctors = mapped.doctors;
         renderLiveQueueTicker();
+        renderDoctors();
       })
       .catch(function () { /* silent background poll */ });
   }
@@ -532,14 +652,21 @@
           "</p>"
         : "";
 
+      var liveDocPill = isDoctorQueueRunningToday(doc)
+        ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-0.5 text-[11px] font-bold whitespace-nowrap">' +
+            '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>' +
+            "<span>চলমান সিরিয়াল: " + escapeHtml(formatSerialCode(doc.current_serial)) + "</span>" +
+          "</span>"
+        : "";
+
       return (
         '<article class="doc-card">' +
           '<div class="p-5">' +
             '<div class="flex items-start gap-3.5">' +
               avatarHtml +
               '<div class="min-w-0 flex-1">' +
-                '<div class="flex flex-wrap gap-1.5">' + badgesHtml + "</div>" +
-                '<h3 class="mt-1.5 text-lg font-bold text-brand-950 leading-snug">' + escapeHtml(name) + "</h3>" +
+                '<div class="flex flex-wrap gap-1.5">' + badgesHtml + liveDocPill + "</div>" +
+                '<h3 class="mt-1.5 text-[1.2rem] sm:text-xl font-bold text-brand-950 leading-snug">' + escapeHtml(name) + "</h3>" +
                 (!doc.fromSupabase && focus ? '<p class="text-xs font-semibold text-delta-600 mt-0.5">' + escapeHtml(focus) + "</p>" : "") +
               "</div>" +
             "</div>" +
@@ -1191,6 +1318,7 @@
 
       var bookBtn = e.target.closest("[data-book-doc]");
       if (bookBtn) {
+        setQueuePopoverOpen(false);
         var docId = bookBtn.getAttribute("data-book-doc");
         selectSerialTarget("doc:" + docId);
         return;
@@ -1257,6 +1385,50 @@
         if (e.target === slipModal) closeSerialSlipModal();
       });
     }
+
+    // Floating Live Chamber Queue widget & slide-up popover
+    var queueFab = $("liveQueueFab");
+    var queuePopover = $("liveQueuePopover");
+    var closePopoverBtn = $("closeQueuePopoverBtn");
+    var openFromBarBtn = $("openQueueDrawerFromBar");
+    var queueWidget = $("liveQueueWidget");
+
+    if (queueFab && queuePopover) {
+      queueFab.addEventListener("click", function () {
+        var isOpen = !queuePopover.classList.contains("hidden");
+        setQueuePopoverOpen(!isOpen);
+      });
+    }
+    var queueTeaser = $("liveQueueTeaser");
+    if (queueTeaser) {
+      queueTeaser.addEventListener("click", function () {
+        setQueuePopoverOpen(true);
+      });
+    }
+    if (closePopoverBtn) {
+      closePopoverBtn.addEventListener("click", function () {
+        setQueuePopoverOpen(false);
+      });
+    }
+    if (openFromBarBtn) {
+      openFromBarBtn.addEventListener("click", function () {
+        setQueuePopoverOpen(true);
+      });
+    }
+    document.addEventListener("click", function (e) {
+      if (
+        queuePopover &&
+        !queuePopover.classList.contains("hidden") &&
+        queueWidget &&
+        !queueWidget.contains(e.target) &&
+        (!openFromBarBtn || !openFromBarBtn.contains(e.target))
+      ) {
+        setQueuePopoverOpen(false);
+      }
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") setQueuePopoverOpen(false);
+    });
 
     // Mobile menu toggle
     var menuBtn = $("menuBtn");

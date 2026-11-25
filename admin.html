@@ -273,22 +273,30 @@
       <div id="dbErrorBanner" class="no-print hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 break-words" role="alert"></div>
 
       <!-- Live Chamber Queue Control Panel ("লাইভ চেম্বার সিরিয়াল") -->
-      <section id="liveQueueControlSection" aria-label="Live Chamber Queue Controls" class="no-print w-full max-w-full min-w-0 bg-gradient-to-br from-emerald-50/70 via-white to-brand-50/40 rounded-2xl border border-emerald-200 p-4 sm:p-5 shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-3.5">
-          <div class="flex items-center gap-2.5 min-w-0">
-            <span class="relative flex h-3 w-3 shrink-0" aria-hidden="true">
+      <section id="liveQueueControlSection" aria-label="Live Chamber Queue Controls" class="no-print w-full max-w-full min-w-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="bg-gradient-to-r from-emerald-50/75 via-white to-white border-b border-emerald-100/90 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-600"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
-            <div class="min-w-0">
-              <h2 class="font-extrabold text-brand-950 text-sm sm:text-base leading-snug">লাইভ চেম্বার সিরিয়াল (Now Serving Control)</h2>
-              <p class="text-xs text-slate-500">Tap <strong class="text-emerald-700">+1 Next</strong> to update the live serial ticker on the public website</p>
-            </div>
+            <h2 class="font-bold text-slate-900 text-sm leading-snug truncate">
+              লাইভ চেম্বার সিরিয়াল <span class="hidden sm:inline font-medium text-xs text-slate-500">(Now Serving Control)</span>
+            </h2>
           </div>
-          <span id="liveQueueDatePill" class="rounded-full bg-white border border-emerald-200 px-3 py-1 text-xs font-bold text-emerald-800 shrink-0"></span>
+          <div class="flex items-center gap-2 shrink-0">
+            <span id="liveQueueActiveCount" class="inline-flex items-center rounded-full bg-slate-100 text-slate-600 px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap"></span>
+            <span id="liveQueueDatePill" class="hidden sm:inline-flex items-center rounded-full bg-white border border-slate-200 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 whitespace-nowrap"></span>
+            <button type="button" id="toggleLiveQueuePanelBtn" aria-expanded="true" aria-controls="liveQueueControlBody"
+                    class="inline-flex items-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-2 py-1 text-[11px] font-semibold transition cursor-pointer">
+              Hide
+            </button>
+          </div>
         </div>
-        <div id="liveQueueControlGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
-          <p class="text-xs text-slate-500 col-span-full">Loading active doctors…</p>
+        <div id="liveQueueControlBody" class="p-3">
+          <div id="liveQueueControlGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 min-w-0">
+            <p class="text-xs text-slate-500 col-span-full">Loading active doctors…</p>
+          </div>
         </div>
       </section>
 
