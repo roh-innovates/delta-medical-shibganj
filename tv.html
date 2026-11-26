@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="bn" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>লাইভ সিরিয়াল টিভি বোর্ড | ডেলটা মেডিকেল সেন্টার, শিবগঞ্জ</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#061322" />
+  <link rel="icon" href="assets/logo.jpg" type="image/jpeg" />
+
+  <!-- Fonts: Hind Siliguri (Bangla) + Inter (Numbers & English) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@500;600;700&family=Inter:wght@500;600;700;800;900&display=swap" />
+
+  <!-- Tailwind CSS via CDN (No build step, Vercel-ready) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Hind Siliguri", "Inter", "system-ui", "-apple-system", "sans-serif"],
+            num: ["Inter", "Hind Siliguri", "system-ui", "sans-serif"]
+          },
+          colors: {
+            brand: { 50: "#eef7fd", 100: "#d6ecfa", 200: "#b0daf5", 400: "#40a2e2", 500: "#1888d2", 600: "#0b77c2", 700: "#0a5f9c", 800: "#0d4f80", 900: "#10426a", 950: "#0b2a46" },
+            delta: { 500: "#e5262e", 600: "#d01c24" }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* Theme tokens: Dark Lobby Default + Clean Clinical Light Mode */
+    :root,
+    html[data-theme="dark"] {
+      --tv-bg: #061322;
+      --tv-bg-accent: radial-gradient(circle at 12% 0%, rgba(16, 185, 129, 0.14), transparent 42%),
+                      radial-gradient(circle at 88% 100%, rgba(11, 119, 194, 0.16), transparent 45%);
+      --tv-surface: rgba(13, 29, 49, 0.92);
+      --tv-surface-muted: rgba(12, 26, 44, 0.65);
+      --tv-header: rgba(8, 21, 38, 0.94);
+      --tv-border: rgba(148, 163, 184, 0.18);
+      --tv-border-live: rgba(52, 211, 153, 0.48);
+      --tv-text: #f8fafc;
+      --tv-text-muted: #94a3b8;
+      --tv-sl-bg: linear-gradient(145deg, rgba(6, 78, 59, 0.92), rgba(4, 120, 87, 0.85));
+      --tv-sl-border: rgba(52, 211, 153, 0.5);
+      --tv-sl-text: #ffffff;
+      --tv-room-bg: rgba(14, 165, 233, 0.16);
+      --tv-room-border: rgba(56, 189, 248, 0.35);
+      --tv-room-text: #7dd3fc;
+      --tv-ctrl-bg: rgba(30, 41, 59, 0.85);
+      --tv-ctrl-border: rgba(148, 163, 184, 0.25);
+      --tv-ctrl-text: #e2e8f0;
+      --tv-spotlight-bg: linear-gradient(90deg, #065f46, #047857, #0f766e);
+      --tv-accent: #34d399;
+      --tv-accent-bg: rgba(16, 185, 129, 0.16);
+      --tv-accent-border: rgba(52, 211, 153, 0.42);
+      --tv-warn-text: #fcd34d;
+      --tv-err-text: #fda4af;
+    }
+
+    html[data-theme="light"] {
+      --tv-bg: #f1f5f9;
+      --tv-bg-accent: radial-gradient(circle at 10% 0%, rgba(16, 185, 129, 0.1), transparent 42%),
+                      radial-gradient(circle at 90% 100%, rgba(11, 119, 194, 0.08), transparent 45%);
+      --tv-surface: #ffffff;
+      --tv-surface-muted: #f8fafc;
+      --tv-header: rgba(255, 255, 255, 0.96);
+      --tv-border: #cbd5e1;
+      --tv-border-live: #6ee7b7;
+      --tv-text: #0f172a;
+      --tv-text-muted: #475569;
+      --tv-sl-bg: linear-gradient(145deg, #065f46, #059669);
+      --tv-sl-border: #10b981;
+      --tv-sl-text: #ffffff;
+      --tv-room-bg: #eef7fd;
+      --tv-room-border: #b0daf5;
+      --tv-room-text: #0a5f9c;
+      --tv-ctrl-bg: #ffffff;
+      --tv-ctrl-border: #cbd5e1;
+      --tv-ctrl-text: #1e293b;
+      --tv-spotlight-bg: linear-gradient(90deg, #065f46, #059669, #0d9488);
+      --tv-accent: #047857;
+      --tv-accent-bg: #ecfdf5;
+      --tv-accent-border: #6ee7b7;
+      --tv-warn-text: #92400e;
+      --tv-err-text: #9f1239;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background-color: var(--tv-bg);
+      background-image: var(--tv-bg-accent);
+      color: var(--tv-text);
+      overflow-x: clip;
+    }
+
+    .tv-header {
+      background: var(--tv-header);
+      border-bottom: 1px solid var(--tv-border);
+    }
+
+    .tv-footer {
+      background: var(--tv-header);
+      border-top: 1px solid var(--tv-border);
+    }
+
+    .tv-card {
+      background: var(--tv-surface);
+      border: 1.5px solid var(--tv-border-live);
+      box-shadow: 0 18px 42px -18px rgba(0, 0, 0, 0.45);
+      transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .tv-card-standby {
+      background: var(--tv-surface-muted);
+      border: 1px solid var(--tv-border);
+    }
+
+    .tv-sl-box {
+      background: var(--tv-sl-bg);
+      border: 1.5px solid var(--tv-sl-border);
+      color: var(--tv-sl-text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tv-room-badge {
+      background: var(--tv-room-bg);
+      border: 1px solid var(--tv-room-border);
+      color: var(--tv-room-text);
+    }
+
+    .tv-ctrl-btn {
+      background: var(--tv-ctrl-bg);
+      border: 1px solid var(--tv-ctrl-border);
+      color: var(--tv-ctrl-text);
+    }
+
+    .tv-muted {
+      color: var(--tv-text-muted);
+    }
+
+    .tv-accent-text {
+      color: var(--tv-accent);
+    }
+
+    .tv-accent-pill {
+      background: var(--tv-accent-bg);
+      border: 1px solid var(--tv-accent-border);
+      color: var(--tv-accent);
+    }
+
+    .tv-warn-text {
+      color: var(--tv-warn-text);
+    }
+
+    .tv-err-text {
+      color: var(--tv-err-text);
+    }
+
+    .tv-spotlight {
+      background: var(--tv-spotlight-bg);
+      animation: spotlightSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    @keyframes spotlightSlideIn {
+      from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .tv-card-flash {
+      animation: cardFlashPulse 1.4s ease-out 2;
+      border-color: #34d399 !important;
+    }
+
+    @keyframes cardFlashPulse {
+      0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.75); transform: scale(1); }
+      35% { box-shadow: 0 0 0 14px rgba(52, 211, 153, 0); transform: scale(1.018); }
+      100% { box-shadow: 0 18px 42px -18px rgba(0, 0, 0, 0.45); transform: scale(1); }
+    }
+
+    .tv-sl-pop {
+      animation: slPop 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes slPop {
+      0% { transform: scale(0.86); }
+      55% { transform: scale(1.09); }
+      100% { transform: scale(1); }
+    }
+
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .tv-spotlight, .tv-card-flash, .tv-sl-pop { animation: none; }
+    }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-500 selection:text-white">
+
+  <!-- ============ TOP HOSPITAL HEADER ============ -->
+  <header class="tv-header sticky top-0 z-30 backdrop-blur px-4 sm:px-6 lg:px-8 py-3 sm:py-3.5 shrink-0">
+    <div class="mx-auto max-w-[1800px] flex flex-wrap items-center justify-between gap-3">
+      <!-- Brand Identity -->
+      <div class="flex items-center gap-3 sm:gap-4 min-w-0">
+        <img src="assets/logo.jpg" alt="ডেলটা মেডিকেল সেন্টার" width="52" height="52"
+             class="w-11 h-11 sm:w-14 sm:h-14 rounded-full ring-2 ring-emerald-400/50 shrink-0 shadow" />
+        <div class="min-w-0 leading-tight">
+          <h1 class="font-bold text-base sm:text-xl lg:text-2xl xl:text-[1.7rem] tracking-tight truncate">
+            ডেলটা মেডিকেল সেন্টার এন্ড মা ও শিশু হাসপাতাল
+          </h1>
+          <p class="tv-muted text-xs sm:text-sm font-medium mt-0.5 truncate">
+            ওয়াটার সাপ্লাই মোড়, হাসপাতাল রোড, শিবগঞ্জ · জরুরি ও সিরিয়াল: <span class="font-num font-bold">০১৭২৪-৩৬৩৮৩৮</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Right: Live Pill, Clock & Minimal TV Controls -->
+      <div class="flex items-center gap-2.5 sm:gap-4 ml-auto shrink-0">
+        <!-- Realtime Connection & Live Count Pill -->
+        <div class="hidden sm:flex items-center gap-2 rounded-full px-3.5 py-1.5 tv-accent-pill">
+          <span id="tvLiveDot" class="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80"></span>
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
+          <span id="tvLiveSummary" class="text-xs lg:text-sm font-bold whitespace-nowrap">লাইভ সিরিয়াল</span>
+        </div>
+
+        <!-- Big Live Clock -->
+        <div class="text-right leading-tight">
+          <p id="tvClock" class="font-num font-extrabold text-xl sm:text-2xl lg:text-3xl tracking-tight tabular-nums">--:--:--</p>
+          <p id="tvDate" class="tv-muted text-[11px] sm:text-xs font-semibold whitespace-nowrap">---</p>
+        </div>
+
+        <!-- Discreet TV Setup Controls -->
+        <div class="flex items-center gap-1.5 pl-1 border-l border-slate-500/25">
+          <button type="button" id="tvSoundBtn" title="Toggle announcement chime"
+                  class="tv-ctrl-btn inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-bold hover:opacity-90 transition cursor-pointer whitespace-nowrap">
+            <span id="tvSoundIcon" aria-hidden="true">🔊</span>
+            <span id="tvSoundLabel" class="hidden md:inline">শব্দ চালু</span>
+          </button>
+
+          <button type="button" id="tvThemeBtn" title="Switch Dark / Light theme"
+                  class="tv-ctrl-btn inline-flex items-center justify-center rounded-xl w-9 h-9 text-sm font-bold hover:opacity-90 transition cursor-pointer"
+                  aria-label="Toggle dark or light mode">
+            <span id="tvThemeIcon" aria-hidden="true">☀️</span>
+          </button>
+
+          <button type="button" id="tvFullscreenBtn" title="Toggle Fullscreen (F11)"
+                  class="tv-ctrl-btn inline-flex items-center justify-center rounded-xl w-9 h-9 text-sm font-bold hover:opacity-90 transition cursor-pointer"
+                  aria-label="Toggle fullscreen">
+            <span id="tvFsIcon" aria-hidden="true">⛶</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ SOUND UNLOCK HINT (Auto-hides after 1 click anywhere) ============ -->
+  <div id="tvAudioHintBar" class="hidden bg-amber-500/15 border-b border-amber-400/35 px-4 py-1.5 text-center text-xs sm:text-sm font-semibold tv-warn-text cursor-pointer">
+    🔔 সিরিয়াল পরিবর্তনের শব্দ (Chime) সক্রিয় করতে স্ক্রিনে একবার ক্লিক করুন
+  </div>
+
+  <!-- ============ NOW CALLING SPOTLIGHT BANNER (Pops on +1 Next) ============ -->
+  <div id="tvSpotlightWrap" class="hidden px-4 sm:px-6 lg:px-8 pt-4 shrink-0">
+    <div class="mx-auto max-w-[1800px] tv-spotlight rounded-2xl sm:rounded-3xl px-5 sm:px-8 py-4 sm:py-5 text-white shadow-2xl border border-emerald-300/40 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3.5 sm:gap-5 min-w-0">
+        <span class="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/15 border border-white/25 grid place-items-center text-2xl sm:text-3xl shrink-0" aria-hidden="true">🔔</span>
+        <div class="min-w-0">
+          <p class="text-xs sm:text-sm font-bold uppercase tracking-widest text-emerald-200">এখন ডাকছেন · NOW CALLING</p>
+          <p id="tvSpotlightDoctor" class="text-xl sm:text-2xl lg:text-3xl font-extrabold leading-tight truncate mt-0.5">—</p>
+          <p id="tvSpotlightMeta" class="text-xs sm:text-base text-emerald-100/90 font-semibold mt-0.5 truncate">—</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 shrink-0 ml-auto">
+        <span id="tvSpotlightSerial" class="font-num font-black text-4xl sm:text-5xl lg:text-6xl bg-white text-emerald-900 rounded-2xl px-5 sm:px-7 py-2 sm:py-2.5 shadow-lg tracking-tight tabular-nums">
+          SL-01
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN LIVE BOARD ============ -->
+  <main class="flex-1 px-4 sm:px-6 lg:px-8 py-5 sm:py-6 flex flex-col gap-6 mx-auto w-full max-w-[1800px]">
+    <!-- Loading State -->
+    <div id="tvLoading" class="flex-1 flex flex-col items-center justify-center gap-4 py-16 text-center">
+      <div class="w-12 h-12 rounded-full border-4 border-emerald-400/25 border-t-emerald-400 animate-spin"></div>
+      <p class="text-lg font-bold tv-muted">লাইভ চেম্বার তথ্য লোড হচ্ছে…</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="tvError" class="hidden rounded-2xl border border-rose-400/40 bg-rose-500/15 px-5 py-4 text-center">
+      <p id="tvErrorMsg" class="text-sm sm:text-base font-bold tv-err-text">ডাটাবেজের সাথে সংযোগ করা যায়নি — স্বয়ংক্রিয়ভাবে পুনরায় চেষ্টা করা হচ্ছে…</p>
+    </div>
+
+    <!-- Active Running Chambers Grid -->
+    <section id="tvRunningSection" class="hidden flex-1 flex flex-col justify-center" aria-label="বর্তমান চলমান চেম্বার">
+      <div class="flex items-center justify-between gap-2 mb-3.5">
+        <h2 class="flex items-center gap-2.5 text-sm sm:text-base lg:text-lg font-bold tracking-wide uppercase tv-accent-text">
+          <span class="relative flex h-3 w-3 shrink-0" aria-hidden="true">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+          </span>
+          <span>বর্তমান সিরিয়াল চলছে (Now Serving)</span>
+        </h2>
+        <span id="tvSyncStamp" class="tv-muted text-xs font-semibold"></span>
+      </div>
+
+      <div id="tvRunningGrid" class="grid gap-4 sm:gap-5 lg:gap-6"></div>
+    </section>
+
+    <!-- Waiting / Standby Banner when 0 Chambers Live -->
+    <section id="tvIdleHero" class="hidden rounded-3xl tv-card-standby p-6 sm:p-10 text-center">
+      <div class="mx-auto w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-400/30 grid place-items-center mb-4">
+        <img src="assets/logo.jpg" alt="" class="w-12 h-12 rounded-full" />
+      </div>
+      <h2 class="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight">
+        ডেলটা মেডিকেল সেন্টারে আপনাকে স্বাগতম
+      </h2>
+      <p class="mt-2 tv-muted text-base sm:text-lg max-w-5xl mx-auto">
+        আজকের বিশেষজ্ঞ চেম্বার শুরু হওয়া মাত্রই এখানে বড় পর্দায় চলমান সিরিয়াল নম্বর (<strong class="font-num tv-accent-text">SL-01, SL-02…</strong>) স্বয়ংক্রিয়ভাবে দেখাবে।
+      </p>
+      <div class="mt-5 inline-flex flex-wrap items-center justify-center gap-3 text-sm sm:text-base font-bold">
+        <span class="rounded-full bg-delta-600 text-white px-4 py-1.5">২৪/৭ জরুরি বিভাগ খোলা</span>
+        <span class="rounded-full tv-accent-pill px-4 py-1.5 font-num">সিরিয়াল হটলাইন: ০১৭২৪-৩৬৩৮৩৮</span>
+      </div>
+    </section>
+
+    <!-- Standby Doctors Strip -->
+    <section id="tvStandbySection" class="hidden" aria-label="অপেক্ষমাণ চেম্বার">
+      <h3 id="tvStandbyHeading" class="tv-muted text-xs sm:text-sm font-bold uppercase tracking-wider mb-2.5">
+        অপেক্ষমাণ চেম্বার (চেম্বার এখনো শুরু হয়নি)
+      </h3>
+      <div id="tvStandbyGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3"></div>
+    </section>
+  </main>
+
+  <!-- ============ BOTTOM HOSPITAL INFO BAR ============ -->
+  <footer class="tv-footer px-4 sm:px-6 lg:px-8 py-2.5 shrink-0">
+    <div class="mx-auto max-w-[1800px] flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+      <p class="tv-muted font-semibold">
+        ২৪/৭ জরুরি সেবা · মা ও শিশু বিভাগ · ৪ডি আল্ট্রাসনোগ্রাফি · ডিজিটাল এক্স-রে · প্যাথলজি ল্যাব
+      </p>
+      <div class="flex items-center gap-3 sm:gap-4 font-semibold">
+        <span id="tvSiteHost" class="tv-accent-text font-num"></span>
+        <span id="tvConnectionBadge" class="inline-flex items-center gap-1.5 tv-muted text-xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span>Realtime Connected</span>
+        </span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts (Standard tags, shared Supabase config) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/tv.js"></script>
+</body>
+</html>
