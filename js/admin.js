@@ -821,24 +821,48 @@
         .update(payload)
         .eq("id", targetId);
     } else {
-      // Assign next sequential daily serial_no for the same doctor & appointment_date
-      var maxSerial = 0;
-      appointments.forEach(function (r) {
-        if (
-          r.appointment_date === appointment_date &&
-          String(r.doctor_name || "").trim().toLowerCase() === doctor_name.toLowerCase()
-        ) {
-          var sn = parseInt(r.serial_no, 10);
-          if (!isNaN(sn) && sn > maxSerial) maxSerial = sn;
-        }
-      });
-      var insertPayload = Object.assign({}, payload, { serial_no: maxSerial + 1 });
+      // Prefer atomic server-side RPC (shares advisory lock with public bookings)
       req = window.supabaseClient
-        .from("appointments")
-        .insert([insertPayload])
+        .rpc("create_admin_booking", {
+          p_patient_name: patient_name,
+          p_patient_phone: patient_phone,
+          p_doctor_name: doctor_name,
+          p_department: department,
+          p_appointment_date: appointment_date,
+          p_status: status,
+          p_notes: notes || null
+        })
         .then(function (res) {
-          if (res.error && /serial_no/i.test(res.error.message || "")) {
-            return window.supabaseClient.from("appointments").insert([payload]);
+          var errMsg = (res && res.error && res.error.message) || "";
+          var errCode = (res && res.error && res.error.code) || "";
+          // Graceful fallback if the SQL migration hasn't been executed yet
+          if (res && res.error && (errCode === "42883" || errCode === "PGRST202" || /create_admin_booking/i.test(errMsg))) {
+            var maxSerial = 0;
+            appointments.forEach(function (r) {
+              if (
+                r.appointment_date === appointment_date &&
+                String(r.doctor_name || "").trim().toLowerCase() === doctor_name.toLowerCase()
+              ) {
+                var sn = parseInt(r.serial_no, 10);
+                if (!isNaN(sn) && sn > maxSerial) maxSerial = sn;
+              }
+            });
+            var insertPayload = Object.assign({}, payload, { serial_no: maxSerial + 1 });
+            return window.supabaseClient
+              .from("appointments")
+              .insert([insertPayload])
+              .then(function (fallbackRes) {
+                if (fallbackRes.error && /serial_no/i.test(fallbackRes.error.message || "")) {
+                  return window.supabaseClient.from("appointments").insert([payload]);
+                }
+                if (!fallbackRes.error) {
+                  fallbackRes._assignedSerial = maxSerial + 1;
+                }
+                return fallbackRes;
+              });
+          }
+          if (!res.error && res.data && typeof res.data === "object" && res.data.serial_no != null) {
+            res._assignedSerial = parseInt(res.data.serial_no, 10);
           }
           return res;
         });
@@ -851,7 +875,12 @@
           return;
         }
         closeSerialModal();
-        showToast(editingIdStr ? "Appointment updated" : "New serial created");
+        var createdCode = !editingIdStr && res._assignedSerial ? formatSerialCode(res._assignedSerial) : "";
+        showToast(
+          editingIdStr
+            ? "Appointment updated"
+            : (createdCode ? "New serial " + createdCode + " created" : "New serial created")
+        );
         return loadAppointments(true);
       })
       .catch(function (err) {

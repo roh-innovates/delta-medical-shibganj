@@ -407,18 +407,18 @@
       </div>
     </section>
 
-    <!-- ============ 5. SERIAL REQUEST FORM ============ -->
+    <!-- ============ 5. SERIAL REQUEST FORM & LOOKUP ============ -->
     <section id="serial" class="py-14 lg:py-20 bg-gradient-to-br from-brand-700 to-brand-900 text-white scroll-mt-20">
       <div class="mx-auto max-w-7xl px-4 grid lg:grid-cols-2 gap-10 lg:gap-14 items-start">
         <div>
-          <p class="eyebrow !text-sun-300" data-i18n="form.eyebrow">দ্রুত সিরিয়াল</p>
-          <h2 class="section-title !text-white" data-i18n="form.title">হোয়াটসঅ্যাপে সিরিয়াল অনুরোধ</h2>
-          <p class="mt-3 text-brand-100 text-lg" data-i18n="form.lead">ফর্মটি পূরণ করে পাঠান — রিসেপশনের হোয়াটসঅ্যাপে মেসেজ চলে যাবে এবং তারা আপনার সিরিয়াল নিশ্চিত করবেন।</p>
+          <p class="eyebrow !text-sun-300" data-i18n="form.eyebrow">অনলাইন ও হোয়াটসঅ্যাপ সিরিয়াল</p>
+          <h2 class="section-title !text-white" data-i18n="form.title">অনলাইনে সিরিয়াল বুক করুন</h2>
+          <p class="mt-3 text-brand-100 text-lg" data-i18n="form.lead">ফর্মটি পূরণ করে সিরিয়াল বুক করুন — আপনার তথ্য সরাসরি হাসপাতালের রিসেপশন সিস্টেমে জমা হবে। চাইলে এক ট্যাপে হোয়াটসঅ্যাপেও পাঠাতে পারবেন।</p>
 
           <ol class="mt-8 space-y-4">
-            <li class="step"><span class="step-num" data-num="1">১</span><span data-i18n="form.steps1">ফর্ম পূরণ করুন</span></li>
-            <li class="step"><span class="step-num" data-num="2">২</span><span data-i18n="form.steps2">হোয়াটসঅ্যাপে পাঠান</span></li>
-            <li class="step"><span class="step-num" data-num="3">৩</span><span data-i18n="form.steps3">রিসেপশন থেকে নিশ্চিতকরণ পান</span></li>
+            <li class="step"><span class="step-num" data-num="1">১</span><span data-i18n="form.steps1">রোগীর তথ্য ও পছন্দের তারিখ দিন</span></li>
+            <li class="step"><span class="step-num" data-num="2">২</span><span data-i18n="form.steps2">অনলাইনে সিরিয়াল জমা দিন বা হোয়াটসঅ্যাপে পাঠান</span></li>
+            <li class="step"><span class="step-num" data-num="3">৩</span><span data-i18n="form.steps3">রিসেপশন থেকে কল বা মেসেজে নিশ্চিতকরণ পান</span></li>
           </ol>
 
           <div class="mt-8 rounded-2xl bg-white/10 border border-white/15 p-5">
@@ -430,47 +430,88 @@
           </div>
         </div>
 
-        <form id="serialForm" class="bg-white text-slate-800 rounded-3xl shadow-2xl p-5 sm:p-8" novalidate>
-          <div class="grid gap-5">
-            <div>
-              <label for="fName" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-user"/></svg><span data-i18n="form.name">রোগীর নাম</span> <span class="text-delta-600">*</span></label>
-              <input id="fName" name="name" type="text" class="field" autocomplete="name" required maxlength="60" data-i18n-placeholder="form.namePh" placeholder="যেমন: রহিমা খাতুন" aria-describedby="eName" />
-              <p id="eName" class="err" data-i18n="form.err.name" hidden>রোগীর নাম লিখুন</p>
-            </div>
-            <div>
-              <label for="fPhone" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-phone"/></svg><span data-i18n="form.phone">মোবাইল নম্বর</span> <span class="text-delta-600">*</span></label>
-              <input id="fPhone" name="phone" type="tel" inputmode="tel" class="field" autocomplete="tel" required maxlength="17" data-i18n-placeholder="form.phonePh" placeholder="০১XXXXXXXXX" aria-describedby="ePhone" />
-              <p id="ePhone" class="err" data-i18n="form.err.phone" hidden>সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (০১XXXXXXXXX)</p>
-            </div>
-            <div>
-              <label for="fTarget" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-steth"/></svg><span data-i18n="form.target">ডাক্তার / বিভাগ</span> <span class="text-delta-600">*</span></label>
-              <div class="relative">
-                <select id="fTarget" name="target" class="field appearance-none pr-10" required aria-describedby="eTarget"></select>
-                <svg class="icon w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><use href="#i-down"/></svg>
-              </div>
-              <p id="eTarget" class="err" data-i18n="form.err.target" hidden>ডাক্তার বা বিভাগ নির্বাচন করুন</p>
-            </div>
-            <div>
-              <label for="fDate" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-cal"/></svg><span data-i18n="form.date">পছন্দের তারিখ</span> <span class="text-delta-600">*</span></label>
-              <input id="fDate" name="date" type="date" class="field" required aria-describedby="eDate dayHint" />
-              <p id="eDate" class="err" data-i18n="form.err.date" hidden>আজ বা পরবর্তী কোনো তারিখ নির্বাচন করুন</p>
-              <p id="dayHint" class="mt-2 text-sm" aria-live="polite"></p>
-            </div>
-
-            <div class="grid gap-2.5 pt-1">
-              <button id="serialSubmitBtn" type="submit" class="btn btn-brand btn-lg justify-center w-full shadow-soft">
-                <svg class="icon w-5 h-5"><use href="#i-cal"/></svg>
-                <span id="serialSubmitText" data-i18n="form.submit">সিরিয়াল বুক করুন</span>
-              </button>
-              <button id="serialWaBtn" type="button" class="btn btn-wa justify-center w-full text-sm sm:text-base py-3">
-                <svg class="icon w-5 h-5"><use href="#i-wa"/></svg>
-                <span data-i18n="form.waDirect">সরাসরি হোয়াটসঅ্যাপে সিরিয়াল পাঠান</span>
-              </button>
-            </div>
-            <div id="formStatus" class="hidden" role="status" aria-live="polite"></div>
-            <p class="text-xs text-slate-500 text-center" data-i18n="form.privacy">আপনার তথ্য শুধুমাত্র হাসপাতালের সিরিয়াল বুকিংয়ের জন্য ব্যবহৃত হবে।</p>
+        <div class="bg-white text-slate-800 rounded-3xl shadow-2xl p-5 sm:p-8 min-w-0">
+          <!-- Mode Switcher: Book New Serial vs Check My Serial -->
+          <div class="bg-slate-100 rounded-2xl p-1 grid grid-cols-2 gap-1 mb-6" role="tablist" aria-label="Serial booking or lookup">
+            <button type="button" id="serialTabBook" role="tab" aria-selected="true" aria-controls="serialForm"
+                    class="rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition bg-white text-brand-800 shadow-sm cursor-pointer text-center">
+              <span data-i18n="form.tabBook">নতুন সিরিয়াল বুক</span>
+            </button>
+            <button type="button" id="serialTabLookup" role="tab" aria-selected="false" aria-controls="serialLookupPanel"
+                    class="rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer text-center">
+              <span data-i18n="form.tabLookup">আমার সিরিয়াল চেক</span>
+            </button>
           </div>
-        </form>
+
+          <!-- Tab 1: New Serial Booking Form -->
+          <form id="serialForm" role="tabpanel" aria-labelledby="serialTabBook" novalidate>
+            <div class="grid gap-5">
+              <div>
+                <label for="fName" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-user"/></svg><span data-i18n="form.name">রোগীর নাম</span> <span class="text-delta-600">*</span></label>
+                <input id="fName" name="name" type="text" class="field" autocomplete="name" required maxlength="60" data-i18n-placeholder="form.namePh" placeholder="যেমন: রহিমা খাতুন" aria-describedby="eName" />
+                <p id="eName" class="err" data-i18n="form.err.name" hidden>রোগীর নাম লিখুন</p>
+              </div>
+              <div>
+                <label for="fPhone" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-phone"/></svg><span data-i18n="form.phone">মোবাইল নম্বর</span> <span class="text-delta-600">*</span></label>
+                <input id="fPhone" name="phone" type="tel" inputmode="tel" class="field" autocomplete="tel" required maxlength="17" data-i18n-placeholder="form.phonePh" placeholder="০১XXXXXXXXX" aria-describedby="ePhone" />
+                <p id="ePhone" class="err" data-i18n="form.err.phone" hidden>সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (০১XXXXXXXXX)</p>
+              </div>
+              <div>
+                <label for="fTarget" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-steth"/></svg><span data-i18n="form.target">ডাক্তার / বিভাগ</span> <span class="text-delta-600">*</span></label>
+                <div class="relative">
+                  <select id="fTarget" name="target" class="field appearance-none pr-10" required aria-describedby="eTarget"></select>
+                  <svg class="icon w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><use href="#i-down"/></svg>
+                </div>
+                <p id="eTarget" class="err" data-i18n="form.err.target" hidden>ডাক্তার বা বিভাগ নির্বাচন করুন</p>
+              </div>
+              <div>
+                <label for="fDate" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-cal"/></svg><span data-i18n="form.date">পছন্দের তারিখ</span> <span class="text-delta-600">*</span></label>
+                <input id="fDate" name="date" type="date" class="field" required aria-describedby="eDate dayHint" />
+                <p id="eDate" class="err" data-i18n="form.err.date" hidden>আজ বা পরবর্তী কোনো তারিখ নির্বাচন করুন</p>
+                <p id="dayHint" class="mt-2 text-sm" aria-live="polite"></p>
+              </div>
+
+              <div class="grid gap-2.5 pt-1">
+                <button id="serialSubmitBtn" type="submit" class="btn btn-brand btn-lg justify-center w-full shadow-soft">
+                  <svg class="icon w-5 h-5"><use href="#i-cal"/></svg>
+                  <span id="serialSubmitText" data-i18n="form.submit">সিরিয়াল বুক করুন</span>
+                </button>
+                <button id="serialWaBtn" type="button" class="btn btn-wa justify-center w-full text-sm sm:text-base py-3">
+                  <svg class="icon w-5 h-5"><use href="#i-wa"/></svg>
+                  <span data-i18n="form.waDirect">সরাসরি হোয়াটসঅ্যাপে সিরিয়াল পাঠান</span>
+                </button>
+              </div>
+              <div id="formStatus" class="hidden" role="status" aria-live="polite"></div>
+              <p class="text-xs text-slate-500 text-center" data-i18n="form.privacy">আপনার তথ্য শুধুমাত্র হাসপাতালের সিরিয়াল বুকিংয়ের জন্য ব্যবহৃত হবে।</p>
+            </div>
+          </form>
+
+          <!-- Tab 2: Check My Serial Lookup Panel -->
+          <div id="serialLookupPanel" role="tabpanel" aria-labelledby="serialTabLookup" class="hidden">
+            <p class="text-sm text-slate-600 leading-relaxed mb-4" data-i18n="lookup.lead">বুকিংয়ের মোবাইল নম্বর দিন — আপনার সিরিয়াল স্ট্যাটাস, লাইভ অপেক্ষার অবস্থান ও ডিজিটাল স্লিপ দেখুন।</p>
+
+            <form id="serialLookupForm" class="grid gap-4" novalidate>
+              <div>
+                <label for="lookupPhone" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-phone"/></svg><span data-i18n="form.phone">মোবাইল নম্বর</span> <span class="text-delta-600">*</span></label>
+                <input id="lookupPhone" name="lookupPhone" type="tel" inputmode="tel" class="field" autocomplete="tel" required maxlength="17" data-i18n-placeholder="form.phonePh" placeholder="০১XXXXXXXXX" aria-describedby="eLookupPhone" />
+                <p id="eLookupPhone" class="err" data-i18n="form.err.phone" hidden>সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (০১XXXXXXXXX)</p>
+              </div>
+
+              <div>
+                <label for="lookupDate" class="label"><svg class="icon w-4 h-4 text-brand-600"><use href="#i-cal"/></svg><span data-i18n="lookup.dateLabel">তারিখ (ঐচ্ছিক)</span></label>
+                <input id="lookupDate" name="lookupDate" type="date" class="field" />
+                <p class="mt-1.5 text-xs text-slate-500" data-i18n="lookup.dateHint">খালি রাখলে আজ ও আসন্ন সব সিরিয়াল দেখাবে</p>
+              </div>
+
+              <button id="lookupSubmitBtn" type="submit" class="btn btn-brand btn-lg justify-center w-full shadow-soft">
+                <svg class="icon w-5 h-5"><use href="#i-search"/></svg>
+                <span id="lookupSubmitText" data-i18n="lookup.submit">আমার সিরিয়াল খুঁজুন</span>
+              </button>
+            </form>
+
+            <div id="serialLookupResults" class="mt-5 space-y-3" aria-live="polite"></div>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -559,7 +600,7 @@
             <span data-i18n="queue.title">বর্তমান সিরিয়াল চলছে</span>
           </p>
           <p class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
-            <span data-i18n="queue.subtitle">প্রতি ২০ সেকেন্ডে আপডেট</span>
+            <span data-i18n="queue.subtitle">লাইভ আপডেট</span>
             <span id="liveQueueTime" class="text-emerald-700 font-semibold"></span>
           </p>
         </div>
@@ -568,6 +609,12 @@
         </button>
       </div>
       <div id="liveQueuePopoverList" class="p-3 space-y-2 overflow-y-auto flex-1 bg-slate-50/60"></div>
+      <div class="bg-white border-t border-slate-100 px-3.5 py-2.5 shrink-0 flex items-center justify-between gap-2">
+        <span class="text-[11px] text-slate-500" data-i18n="queue.alreadyBooked">ইতিমধ্যে বুক করেছেন?</span>
+        <button type="button" id="openLookupFromPopoverBtn" class="text-xs font-bold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer whitespace-nowrap" data-i18n="queue.checkMine">
+          আমার সিরিয়াল চেক করুন →
+        </button>
+      </div>
     </div>
 
     <!-- Brief Auto Pop-up Teaser Bubble -->
@@ -621,7 +668,10 @@
       <div class="mt-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-brand-50 border border-emerald-200 p-4 text-center">
         <p class="text-xs font-bold uppercase tracking-wider text-emerald-800" data-i18n="slip.badgeLabel">আপনার সিরিয়াল নম্বর</p>
         <p id="slipSerialBadge" class="mt-1 text-4xl font-extrabold tracking-tight text-brand-900">SL-01</p>
-        <p class="mt-1 text-xs font-semibold text-emerald-700" data-i18n="slip.note">চেম্বারে আসার সময় এই স্লিপটি রিসেপশনে দেখান</p>
+        <div id="slipStatusWrap" class="mt-2 hidden">
+          <span id="slipStatusBadge" class="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-bold"></span>
+        </div>
+        <p class="mt-1.5 text-xs font-semibold text-emerald-700" data-i18n="slip.note">চেম্বারে আসার সময় এই স্লিপটি রিসেপশনে দেখান</p>
       </div>
 
       <!-- Patient & Appointment Details -->

@@ -1,6 +1,7 @@
 -- =====================================================================
 -- Delta Medical Center & Mother and Child Hospital
--- Reference Supabase SQL Schema & Row-Level Security (RLS) Policies
+-- Supabase SQL Schema, RLS Policies, Atomic Serial RPCs & Realtime
+-- Safe to run repeatedly in Supabase Dashboard -> SQL Editor
 -- =====================================================================
 
 create table if not exists public.appointments (
@@ -35,6 +36,13 @@ create policy "Authenticated staff full access"
   to authenticated
   using (true)
   with check (true);
+
+-- Performance indexes for atomic daily serial assignment & phone lookup
+create index if not exists idx_appointments_doc_date_serial
+  on public.appointments (lower(trim(doctor_name)), appointment_date, serial_no);
+
+create index if not exists idx_appointments_phone_date
+  on public.appointments (patient_phone, appointment_date);
 
 -- =====================================================================
 -- Doctors Chamber Directory Table & RLS Policies
@@ -77,8 +85,13 @@ create policy "Authenticated staff full access on doctors"
   with check (true);
 
 -- =====================================================================
--- Public Booking RPC: assigns next daily serial_no atomically
+-- RPC 1: Public Booking (Atomic Lock + Family-Friendly Duplicate Guard)
+-- Matches duplicates on (phone + patient_name + doctor + date) where
+-- status <> 'Cancelled' so double-taps return the existing SL-XX while
+-- parents can still book multiple family members using one phone.
 -- =====================================================================
+
+drop function if exists public.create_public_booking(text, text, text, text, date);
 
 create or replace function public.create_public_booking(
   p_patient_name text,
@@ -87,17 +100,86 @@ create or replace function public.create_public_booking(
   p_department text,
   p_appointment_date date
 )
-returns integer
+returns jsonb
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
+  v_name text;
+  v_phone text;
+  v_doctor text;
+  v_dept text;
+  v_dhaka_today date;
+  v_existing_serial integer;
+  v_existing_status text;
   v_next_serial integer;
 begin
+  v_name := trim(coalesce(p_patient_name, ''));
+  v_doctor := trim(coalesce(p_doctor_name, ''));
+  v_dept := trim(coalesce(p_department, ''));
+  v_dhaka_today := (now() at time zone 'Asia/Dhaka')::date;
+
+  -- Normalize Bangla/ASCII digits and strip +88 / 88 country prefix
+  v_phone := regexp_replace(
+    translate(coalesce(p_patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
+    '[^0-9]',
+    '',
+    'g'
+  );
+  if v_phone ~ '^8801[3-9][0-9]{8}$' then
+    v_phone := substring(v_phone from 3);
+  elsif v_phone ~ '^1[3-9][0-9]{8}$' then
+    v_phone := '0' || v_phone;
+  end if;
+
+  if length(v_name) < 2 then
+    raise exception 'Patient name must be at least 2 characters';
+  end if;
+  if v_phone !~ '^01[3-9][0-9]{8}$' then
+    raise exception 'Please enter a valid 11-digit Bangladeshi mobile number';
+  end if;
+  if v_doctor = '' or v_dept = '' or p_appointment_date is null then
+    raise exception 'Doctor, department, and appointment date are required';
+  end if;
+  if p_appointment_date < v_dhaka_today then
+    raise exception 'Appointment date cannot be in the past';
+  end if;
+
+  -- Transaction-scoped lock per (doctor, date) prevents concurrent serial collisions
+  perform pg_advisory_xact_lock(
+    hashtext(lower(v_doctor) || '|' || p_appointment_date::text)
+  );
+
+  -- Family-friendly duplicate guard: same phone + patient name + doctor + date (active)
+  select a.serial_no, a.status
+    into v_existing_serial, v_existing_status
+  from public.appointments a
+  where regexp_replace(
+          translate(coalesce(a.patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
+          '[^0-9]',
+          '',
+          'g'
+        ) in (v_phone, '88' || v_phone)
+    and lower(trim(a.patient_name)) = lower(v_name)
+    and lower(trim(a.doctor_name)) = lower(v_doctor)
+    and a.appointment_date = p_appointment_date
+    and a.status <> 'Cancelled'
+  order by a.created_at asc
+  limit 1;
+
+  if found then
+    return jsonb_build_object(
+      'serial_no', coalesce(v_existing_serial, 1),
+      'is_duplicate', true,
+      'status', coalesce(v_existing_status, 'Pending')
+    );
+  end if;
+
   select coalesce(max(serial_no), 0) + 1
     into v_next_serial
   from public.appointments
-  where doctor_name = p_doctor_name
+  where lower(trim(doctor_name)) = lower(v_doctor)
     and appointment_date = p_appointment_date;
 
   insert into public.appointments (
@@ -110,16 +192,239 @@ begin
     status
   ) values (
     v_next_serial,
-    p_patient_name,
-    p_patient_phone,
-    p_doctor_name,
-    p_department,
+    v_name,
+    v_phone,
+    v_doctor,
+    v_dept,
     p_appointment_date,
     'Pending'
   );
 
-  return v_next_serial;
+  return jsonb_build_object(
+    'serial_no', v_next_serial,
+    'is_duplicate', false,
+    'status', 'Pending'
+  );
 end;
 $$;
 
+revoke all on function public.create_public_booking(text, text, text, text, date) from public;
 grant execute on function public.create_public_booking(text, text, text, text, date) to anon, authenticated;
+
+-- =====================================================================
+-- RPC 2: Admin Walk-In / Phone Booking (Shares Same Atomic Serial Lock)
+-- Authenticated reception staff only.
+-- =====================================================================
+
+drop function if exists public.create_admin_booking(text, text, text, text, date, text, text);
+
+create or replace function public.create_admin_booking(
+  p_patient_name text,
+  p_patient_phone text,
+  p_doctor_name text,
+  p_department text,
+  p_appointment_date date,
+  p_status text default 'Confirmed',
+  p_notes text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_name text;
+  v_phone text;
+  v_doctor text;
+  v_dept text;
+  v_status text;
+  v_next_serial integer;
+  v_new_id text;
+begin
+  if auth.role() <> 'authenticated' then
+    raise exception 'Unauthorized';
+  end if;
+
+  v_name := trim(coalesce(p_patient_name, ''));
+  v_doctor := trim(coalesce(p_doctor_name, ''));
+  v_dept := trim(coalesce(p_department, ''));
+  v_status := case
+    when p_status in ('Pending', 'Confirmed', 'Completed', 'Cancelled') then p_status
+    else 'Pending'
+  end;
+
+  v_phone := regexp_replace(
+    translate(coalesce(p_patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
+    '[^0-9]',
+    '',
+    'g'
+  );
+  if v_phone ~ '^8801[3-9][0-9]{8}$' then
+    v_phone := substring(v_phone from 3);
+  elsif v_phone ~ '^1[3-9][0-9]{8}$' then
+    v_phone := '0' || v_phone;
+  end if;
+
+  if length(v_name) < 2 then
+    raise exception 'Patient name is required';
+  end if;
+  if length(v_phone) < 7 then
+    raise exception 'Valid phone number is required';
+  end if;
+  if v_doctor = '' or v_dept = '' or p_appointment_date is null then
+    raise exception 'Doctor, department, and appointment date are required';
+  end if;
+
+  -- Shares the exact same advisory lock key as create_public_booking
+  perform pg_advisory_xact_lock(
+    hashtext(lower(v_doctor) || '|' || p_appointment_date::text)
+  );
+
+  select coalesce(max(serial_no), 0) + 1
+    into v_next_serial
+  from public.appointments
+  where lower(trim(doctor_name)) = lower(v_doctor)
+    and appointment_date = p_appointment_date;
+
+  insert into public.appointments (
+    serial_no,
+    patient_name,
+    patient_phone,
+    doctor_name,
+    department,
+    appointment_date,
+    status,
+    notes
+  ) values (
+    v_next_serial,
+    v_name,
+    v_phone,
+    v_doctor,
+    v_dept,
+    p_appointment_date,
+    v_status,
+    nullif(trim(coalesce(p_notes, '')), '')
+  )
+  returning id::text into v_new_id;
+
+  return jsonb_build_object(
+    'id', v_new_id,
+    'serial_no', v_next_serial
+  );
+end;
+$$;
+
+revoke all on function public.create_admin_booking(text, text, text, text, date, text, text) from public;
+grant execute on function public.create_admin_booking(text, text, text, text, date, text, text) to authenticated;
+
+-- =====================================================================
+-- RPC 3: Privacy-Safe Patient "Check My Serial" Lookup
+-- Requires exact 11-digit Bangladeshi mobile number; never exposes
+-- internal notes, row IDs, or other patients' records.
+-- =====================================================================
+
+drop function if exists public.lookup_patient_serials(text, date);
+
+create or replace function public.lookup_patient_serials(
+  p_patient_phone text,
+  p_appointment_date date default null
+)
+returns table (
+  serial_no integer,
+  patient_name text,
+  patient_phone text,
+  doctor_name text,
+  department text,
+  appointment_date date,
+  status text,
+  doctor_name_bn text,
+  room_no text,
+  current_serial integer,
+  queue_updated_date date
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_phone text;
+  v_dhaka_today date;
+begin
+  v_phone := regexp_replace(
+    translate(coalesce(p_patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
+    '[^0-9]',
+    '',
+    'g'
+  );
+  if v_phone ~ '^8801[3-9][0-9]{8}$' then
+    v_phone := substring(v_phone from 3);
+  elsif v_phone ~ '^1[3-9][0-9]{8}$' then
+    v_phone := '0' || v_phone;
+  end if;
+
+  -- Require exact 11-digit BD mobile number to prevent partial-phone scraping
+  if v_phone !~ '^01[3-9][0-9]{8}$' then
+    return;
+  end if;
+
+  v_dhaka_today := (now() at time zone 'Asia/Dhaka')::date;
+
+  return query
+  select
+    a.serial_no,
+    a.patient_name,
+    a.patient_phone,
+    a.doctor_name,
+    a.department,
+    a.appointment_date,
+    a.status,
+    d.name_bn as doctor_name_bn,
+    d.room_no,
+    coalesce(d.current_serial, 0) as current_serial,
+    d.queue_updated_date
+  from public.appointments a
+  left join lateral (
+    select doc.name_bn, doc.room_no, doc.current_serial, doc.queue_updated_date
+    from public.doctors doc
+    where lower(trim(doc.name_en)) = lower(trim(a.doctor_name))
+       or trim(doc.name_bn) = trim(a.doctor_name)
+    order by doc.is_active desc, doc.display_order asc nulls last, doc.id asc
+    limit 1
+  ) d on true
+  where regexp_replace(
+          translate(coalesce(a.patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
+          '[^0-9]',
+          '',
+          'g'
+        ) in (v_phone, '88' || v_phone)
+    and (
+      (p_appointment_date is not null and a.appointment_date = p_appointment_date)
+      or (p_appointment_date is null and a.appointment_date >= v_dhaka_today)
+    )
+  order by a.appointment_date asc, a.created_at desc
+  limit 10;
+end;
+$$;
+
+revoke all on function public.lookup_patient_serials(text, date) from public;
+grant execute on function public.lookup_patient_serials(text, date) to anon, authenticated;
+
+-- =====================================================================
+-- Enable Supabase Realtime on doctors & appointments (idempotent)
+-- =====================================================================
+
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.doctors;
+  exception when duplicate_object or undefined_object then
+    null;
+  end;
+
+  begin
+    alter publication supabase_realtime add table public.appointments;
+  exception when duplicate_object or undefined_object then
+    null;
+  end;
+end;
+$$;

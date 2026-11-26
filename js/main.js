@@ -28,8 +28,14 @@
     { id: "dept:em",    key: "svc.em.title",    enName: "24/7 Emergency",          defaultDoc: "Duty Doctor" }
   ];
 
+  var LAST_PHONE_KEY = "dmc-last-phone";
   var lastFormResult = null;
   var isSubmitting = false;
+  var activeSerialTab = "book";
+  var lastLookupState = null;
+  var isLookingUp = false;
+  var publicRealtimeChannel = null;
+  var realtimeDebounceTimer = null;
 
   // Live doctor list (starts with fallback hardcoded list, replaced on load if Supabase `doctors` has rows)
   var activeDoctors = Array.isArray(window.DOCTORS) ? window.DOCTORS.slice() : [];
@@ -397,8 +403,35 @@
         activeDoctors = mapped.doctors;
         renderLiveQueueTicker();
         renderDoctors();
+        if (lastLookupState && lastLookupState.type === "results") {
+          renderLookupResults();
+        }
       })
       .catch(function () { /* silent background poll */ });
+  }
+
+  function startPublicLiveQueueRealtime() {
+    if (!window.supabaseClient || publicRealtimeChannel || typeof window.supabaseClient.channel !== "function") {
+      return;
+    }
+    try {
+      publicRealtimeChannel = window.supabaseClient
+        .channel("public-live-queue")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "doctors" },
+          function () {
+            if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+            realtimeDebounceTimer = setTimeout(function () {
+              realtimeDebounceTimer = null;
+              refreshLiveQueueSilently();
+            }, 250);
+          }
+        )
+        .subscribe();
+    } catch (e) {
+      /* Fallback polling stays active if Realtime is unavailable */
+    }
   }
 
   function applyDoctorDirectoryUpdate(nextDoctors, nextSpecs) {
@@ -848,8 +881,46 @@
     }
   }
 
+  /* ------------ Serial Card Tab Switcher (Book vs Check My Serial) ------------ */
+  function switchSerialCardTab(tabName) {
+    activeSerialTab = tabName === "lookup" ? "lookup" : "book";
+    var isBook = activeSerialTab === "book";
+
+    var bookTab = $("serialTabBook");
+    var lookupTab = $("serialTabLookup");
+    var bookForm = $("serialForm");
+    var lookupPanel = $("serialLookupPanel");
+
+    var activeCls = "rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition bg-white text-brand-800 shadow-sm cursor-pointer text-center";
+    var idleCls = "rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer text-center";
+
+    if (bookTab) {
+      bookTab.setAttribute("aria-selected", isBook ? "true" : "false");
+      bookTab.className = isBook ? activeCls : idleCls;
+    }
+    if (lookupTab) {
+      lookupTab.setAttribute("aria-selected", isBook ? "false" : "true");
+      lookupTab.className = isBook ? idleCls : activeCls;
+    }
+    if (bookForm) bookForm.classList.toggle("hidden", !isBook);
+    if (lookupPanel) lookupPanel.classList.toggle("hidden", isBook);
+
+    if (!isBook) {
+      var lookupPhone = $("lookupPhone");
+      if (lookupPhone && !lookupPhone.value) {
+        try {
+          var saved = localStorage.getItem(LAST_PHONE_KEY);
+          if (saved) lookupPhone.value = saved;
+        } catch (e) { /* ignore storage errors */ }
+      }
+    }
+  }
+
+  window.switchSerialCardTab = switchSerialCardTab;
+
   /* ------------ Select Target & Scroll to Serial Form ------------ */
   function selectSerialTarget(targetValue) {
+    switchSerialCardTab("book");
     var select = $("fTarget");
     if (select) {
       select.value = targetValue;
@@ -1008,22 +1079,39 @@
       date: formatBookingDateDisplay(booking.dateVal)
     });
 
-    if (lastFormResult.type === "success") {
+    if (lastFormResult.type === "success" || lastFormResult.type === "duplicate") {
+      var isDup = lastFormResult.type === "duplicate";
       var serialBadgeHtml = booking.serial_code
         ? '<span class="inline-block rounded-lg bg-brand-700 text-white text-xs font-extrabold px-2.5 py-0.5 mr-2">' + escapeHtml(booking.serial_code) + "</span>"
         : "";
-      statusEl.className = "rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 text-emerald-950 shadow-sm";
+      statusEl.className = isDup
+        ? "rounded-2xl border border-brand-200 bg-brand-50/90 p-4 text-brand-950 shadow-sm"
+        : "rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 text-emerald-950 shadow-sm";
+      var iconWrapCls = isDup
+        ? "w-8 h-8 rounded-full bg-brand-600 text-white grid place-items-center shrink-0 mt-0.5"
+        : "w-8 h-8 rounded-full bg-emerald-600 text-white grid place-items-center shrink-0 mt-0.5";
+      var iconId = isDup ? "#i-info" : "#i-check";
+      var titleText = isDup ? I18N.t("form.duplicateTitle") : I18N.t("form.successTitle");
+      var bodyText = isDup
+        ? I18N.t("form.duplicateBody", { name: booking.name, serial: booking.serial_code || "SL-01" })
+        : I18N.t("form.successBody", { name: booking.name });
+      var titleCls = isDup ? "font-bold text-brand-900 text-base" : "font-bold text-emerald-900 text-base";
+      var bodyCls = isDup ? "mt-1 text-sm text-brand-800 leading-relaxed" : "mt-1 text-sm text-emerald-800 leading-relaxed";
+      var chipCls = isDup
+        ? "mt-2 inline-block text-xs font-semibold bg-white/80 border border-brand-200 text-brand-900 rounded-lg px-2.5 py-1"
+        : "mt-2 inline-block text-xs font-semibold bg-white/80 border border-emerald-200 text-emerald-900 rounded-lg px-2.5 py-1";
+
       statusEl.innerHTML =
         '<div class="flex items-start gap-3">' +
-          '<span class="w-8 h-8 rounded-full bg-emerald-600 text-white grid place-items-center shrink-0 mt-0.5">' +
-            '<svg class="icon w-4 h-4"><use href="#i-check"/></svg>' +
+          '<span class="' + iconWrapCls + '">' +
+            '<svg class="icon w-4 h-4"><use href="' + iconId + '"/></svg>' +
           "</span>" +
           '<div class="min-w-0 flex-1">' +
-            '<p class="font-bold text-emerald-900 text-base">' + serialBadgeHtml + escapeHtml(I18N.t("form.successTitle")) + "</p>" +
-            '<p class="mt-1 text-sm text-emerald-800 leading-relaxed">' +
-              escapeHtml(I18N.t("form.successBody", { name: booking.name })) +
+            '<p class="' + titleCls + '">' + serialBadgeHtml + escapeHtml(titleText) + "</p>" +
+            '<p class="' + bodyCls + '">' +
+              escapeHtml(bodyText) +
             "</p>" +
-            '<p class="mt-2 inline-block text-xs font-semibold bg-white/80 border border-emerald-200 text-emerald-900 rounded-lg px-2.5 py-1">' +
+            '<p class="' + chipCls + '">' +
               escapeHtml(summaryText) +
             "</p>" +
             '<div class="mt-3.5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">' +
@@ -1032,10 +1120,12 @@
                     "<span>🎟️ " + escapeHtml(I18N.t("form.viewSlip")) + "</span>" +
                   "</button>"
                 : "") +
-              '<a href="' + escapeHtml(buildSerialSlipWhatsAppUrl(booking)) + '" target="_blank" rel="noopener" class="btn btn-wa justify-center text-sm py-2.5 flex-1">' +
-                '<svg class="icon w-4 h-4"><use href="#i-wa"/></svg>' +
-                "<span>📲 WhatsApp-এ স্লিপ পাঠান</span>" +
-              "</a>" +
+              (booking.status !== "Confirmed" && booking.status !== "Completed"
+                ? '<a href="' + escapeHtml(buildSerialSlipWhatsAppUrl(booking)) + '" target="_blank" rel="noopener" class="btn btn-wa justify-center text-sm py-2.5 flex-1">' +
+                    '<svg class="icon w-4 h-4"><use href="#i-wa"/></svg>' +
+                    "<span>📲 WhatsApp-এ স্লিপ পাঠান</span>" +
+                  "</a>"
+                : "") +
               '<button type="button" data-reset-serial class="btn btn-outline justify-center text-xs sm:text-sm py-2.5">' +
                 escapeHtml(I18N.t("form.bookAnother")) +
               "</button>" +
@@ -1125,8 +1215,36 @@
     if ($("slipDepartment")) $("slipDepartment").textContent = booking.department || "—";
     if ($("slipDate")) $("slipDate").textContent = formatBookingDateDisplay(booking.dateVal);
 
+    var statusKey = String(booking.status || "Pending");
+    var isConfirmedOrDone = statusKey === "Confirmed" || statusKey === "Completed";
+
+    var statusWrap = $("slipStatusWrap");
+    var statusBadge = $("slipStatusBadge");
+    if (statusWrap && statusBadge) {
+      var slipStatusClasses = {
+        Confirmed: "bg-emerald-600 border-emerald-600 text-white",
+        Completed: "bg-sky-600 border-sky-600 text-white",
+        Pending: "bg-amber-50 border-amber-200 text-amber-800"
+      };
+      var slipStatusKey = "slip.status." + (slipStatusClasses[statusKey] ? statusKey : "Pending");
+      statusBadge.className =
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-bold " +
+        (slipStatusClasses[statusKey] || slipStatusClasses.Pending);
+      statusBadge.textContent = I18N.t(slipStatusKey);
+      statusWrap.classList.remove("hidden");
+    }
+
     var waBtn = $("slipWaBtn");
-    if (waBtn) waBtn.setAttribute("href", buildSerialSlipWhatsAppUrl(booking));
+    if (waBtn) {
+      if (isConfirmedOrDone) {
+        waBtn.classList.add("hidden");
+        waBtn.style.display = "none";
+      } else {
+        waBtn.classList.remove("hidden");
+        waBtn.style.display = "";
+        waBtn.setAttribute("href", buildSerialSlipWhatsAppUrl(booking));
+      }
+    }
 
     if (typeof dlg.showModal === "function") {
       if (!dlg.open) dlg.showModal();
@@ -1151,6 +1269,29 @@
   window.openSerialSlipModal = openSerialSlipModal;
   window.closeSerialSlipModal = closeSerialSlipModal;
   window.printSerialSlip = printSerialSlip;
+
+  function extractBookingRpcResult(rpcData) {
+    var serialNo = extractSerialNo(rpcData);
+    var isDuplicate = false;
+    var status = "Pending";
+    var obj = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    if (obj && typeof obj === "object") {
+      if (obj.is_duplicate === true) isDuplicate = true;
+      if (typeof obj.status === "string" && obj.status) status = obj.status;
+    }
+    return {
+      serial_no: serialNo,
+      is_duplicate: isDuplicate,
+      status: status
+    };
+  }
+
+  function rememberLastPhone(phone) {
+    if (!phone) return;
+    try {
+      localStorage.setItem(LAST_PHONE_KEY, phone);
+    } catch (e) { /* ignore storage errors */ }
+  }
 
   function insertAppointmentToSupabase(booking) {
     if (!window.supabaseClient) {
@@ -1182,11 +1323,13 @@
             reason: res.error.message || "Database error"
           };
         } else {
-          var serialNo = extractSerialNo(res ? res.data : null);
-          booking.serial_no = serialNo;
-          booking.serial_code = formatSerialCode(serialNo) || "SL-01";
+          var parsed = extractBookingRpcResult(res ? res.data : null);
+          booking.serial_no = parsed.serial_no;
+          booking.serial_code = formatSerialCode(parsed.serial_no) || "SL-01";
+          booking.status = parsed.status;
+          rememberLastPhone(booking.phone);
           lastFormResult = {
-            type: "success",
+            type: parsed.is_duplicate ? "duplicate" : "success",
             booking: booking
           };
           var nameInput = $("fName");
@@ -1224,10 +1367,15 @@
     insertAppointmentToSupabase(booking)
       .then(function (res) {
         if (!res || !res.error) {
-          var serialNo = extractSerialNo(res ? res.data : null);
-          booking.serial_no = serialNo;
-          booking.serial_code = formatSerialCode(serialNo) || "SL-01";
-          lastFormResult = { type: "success", booking: booking };
+          var parsed = extractBookingRpcResult(res ? res.data : null);
+          booking.serial_no = parsed.serial_no;
+          booking.serial_code = formatSerialCode(parsed.serial_no) || "SL-01";
+          booking.status = parsed.status;
+          rememberLastPhone(booking.phone);
+          lastFormResult = {
+            type: parsed.is_duplicate ? "duplicate" : "success",
+            booking: booking
+          };
           var nameInput = $("fName");
           var phoneInput = $("fPhone");
           if (nameInput) nameInput.value = "";
@@ -1238,6 +1386,240 @@
       .catch(function () { /* WhatsApp already opened */ })
       .finally(function () {
         setSubmittingState(false);
+      });
+  }
+
+  /* ------------ Patient "Check My Serial" Lookup ------------ */
+  function setLookupBusy(busy) {
+    isLookingUp = busy;
+    var btn = $("lookupSubmitBtn");
+    var txt = $("lookupSubmitText");
+    if (btn) btn.disabled = busy;
+    if (txt) txt.textContent = busy ? I18N.t("lookup.searching") : I18N.t("lookup.submit");
+  }
+
+  function findLiveDoctorForLookupRow(row) {
+    var docNameLower = String(row.doctor_name || "").trim().toLowerCase();
+    var docNameBn = String(row.doctor_name_bn || "").trim();
+    return activeDoctors.find(function (d) {
+      var en = String((d.name && d.name.en) || "").trim().toLowerCase();
+      var bn = String((d.name && d.name.bn) || "").trim();
+      return (
+        (docNameLower && en && en === docNameLower) ||
+        (docNameLower && bn && bn.toLowerCase() === docNameLower) ||
+        (docNameBn && bn && bn === docNameBn)
+      );
+    }) || null;
+  }
+
+  function renderLookupResults() {
+    var container = $("serialLookupResults");
+    if (!container) return;
+
+    if (!lastLookupState) {
+      container.innerHTML = "";
+      return;
+    }
+
+    if (lastLookupState.type === "error") {
+      container.innerHTML =
+        '<div class="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950">' +
+          '<p class="font-bold text-amber-900 text-sm">' + escapeHtml(I18N.t("lookup.errorTitle")) + "</p>" +
+          '<p class="mt-1 text-xs sm:text-sm text-amber-800 leading-relaxed">' +
+            escapeHtml(I18N.t("lookup.errorBody", { reason: lastLookupState.reason || "Network error" })) +
+          "</p>" +
+        "</div>";
+      return;
+    }
+
+    var rows = lastLookupState.rows || [];
+    if (!rows.length) {
+      container.innerHTML =
+        '<div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">' +
+          '<p class="font-bold text-slate-800 text-sm sm:text-base">' + escapeHtml(I18N.t("lookup.emptyTitle")) + "</p>" +
+          '<p class="mt-1 text-xs sm:text-sm text-slate-500 leading-relaxed">' + escapeHtml(I18N.t("lookup.emptyBody")) + "</p>" +
+          '<button type="button" data-lookup-book-new class="mt-3.5 btn btn-brand text-xs sm:text-sm py-2 px-4 justify-center">' +
+            escapeHtml(I18N.t("lookup.bookNow")) +
+          "</button>" +
+        "</div>";
+      return;
+    }
+
+    var lang = I18N.lang;
+    var today = todayLocalIso();
+
+    var statusStyles = {
+      Pending: "bg-amber-50 border-amber-200 text-amber-800",
+      Confirmed: "bg-emerald-50 border-emerald-200 text-emerald-800",
+      Completed: "bg-sky-50 border-sky-200 text-sky-800",
+      Cancelled: "bg-rose-50 border-rose-200 text-rose-800"
+    };
+
+    container.innerHTML = rows.map(function (row, idx) {
+      var slCode = formatSerialCode(row.serial_no);
+      var statusKey = row.status || "Pending";
+      var statusBadgeCls = statusStyles[statusKey] || statusStyles.Pending;
+      var statusLabel = I18N.t("lookup.status." + statusKey);
+
+      var liveDoc = findLiveDoctorForLookupRow(row);
+      var displayDoctor = lang === "bn"
+        ? (row.doctor_name_bn || (liveDoc && liveDoc.name && liveDoc.name.bn) || row.doctor_name)
+        : (row.doctor_name || (liveDoc && liveDoc.name && liveDoc.name.en) || row.doctor_name_bn);
+      var roomNo = row.room_no || (liveDoc && liveDoc.room_no) || "";
+
+      // Merge freshest live queue numbers from Realtime activeDoctors when available
+      var curSerial = liveDoc ? Number(liveDoc.current_serial || 0) : Number(row.current_serial || 0);
+      var queueDate = liveDoc
+        ? String(liveDoc.queue_updated_date || "").slice(0, 10)
+        : String(row.queue_updated_date || "").slice(0, 10);
+      var isRunningToday = queueDate === today && curSerial > 0;
+      var apptDate = String(row.appointment_date || "").slice(0, 10);
+
+      var queueBannerHtml = "";
+      if (statusKey === "Pending" || statusKey === "Confirmed") {
+        if (apptDate === today) {
+          if (isRunningToday && row.serial_no) {
+            var mySerialNum = Number(row.serial_no);
+            if (mySerialNum > curSerial) {
+              var ahead = mySerialNum - curSerial;
+              queueBannerHtml =
+                '<div class="mt-3 rounded-xl bg-emerald-50/90 border border-emerald-200 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">' +
+                  '<span class="inline-flex items-center gap-1.5 font-bold text-emerald-800">' +
+                    '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>' +
+                    "<span>" + escapeHtml(I18N.t("lookup.nowServing", { serial: formatSerialCode(curSerial) })) + "</span>" +
+                  "</span>" +
+                  '<span class="font-extrabold text-brand-800">' +
+                    escapeHtml(I18N.t("lookup.ahead", { n: I18N.num(ahead) })) +
+                  "</span>" +
+                "</div>";
+            } else if (mySerialNum === curSerial) {
+              queueBannerHtml =
+                '<div class="mt-3 rounded-xl bg-emerald-600 text-white px-3 py-2 flex items-center gap-2 text-xs font-extrabold shadow-sm">' +
+                  '<span class="relative flex h-2 w-2 shrink-0" aria-hidden="true">' +
+                    '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>' +
+                    '<span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>' +
+                  "</span>" +
+                  "<span>" + escapeHtml(I18N.t("lookup.yourTurn")) + "</span>" +
+                "</div>";
+            } else {
+              queueBannerHtml =
+                '<div class="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-900">' +
+                  escapeHtml(I18N.t("lookup.passed")) +
+                "</div>";
+            }
+          } else {
+            queueBannerHtml =
+              '<div class="mt-3 rounded-xl bg-slate-50 border border-slate-200/90 px-3 py-2 text-xs font-medium text-slate-600">' +
+                escapeHtml(I18N.t("lookup.notStarted")) +
+              "</div>";
+          }
+        } else if (apptDate > today) {
+          queueBannerHtml =
+            '<div class="mt-3 rounded-xl bg-slate-50 border border-slate-200/90 px-3 py-2 text-xs font-medium text-slate-500">' +
+              escapeHtml(I18N.t("lookup.upcoming")) +
+            "</div>";
+        }
+      }
+
+      return (
+        '<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">' +
+          '<div class="flex items-start justify-between gap-2.5">' +
+            '<div class="min-w-0 flex-1">' +
+              '<div class="flex flex-wrap items-center gap-1.5">' +
+                (slCode
+                  ? '<span class="inline-flex items-center rounded-lg bg-brand-700 text-white text-xs font-extrabold px-2.5 py-0.5 tracking-wide">' +
+                      escapeHtml(slCode) +
+                    "</span>"
+                  : "") +
+                '<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold ' + statusBadgeCls + '">' +
+                  escapeHtml(statusLabel) +
+                "</span>" +
+              "</div>" +
+              '<h3 class="mt-2 font-bold text-slate-900 text-sm sm:text-base leading-snug">' +
+                escapeHtml(displayDoctor) +
+              "</h3>" +
+              '<p class="text-xs text-slate-500 mt-0.5">' +
+                escapeHtml(row.department || "") + (roomNo ? " · " + escapeHtml(roomNo) : "") +
+              "</p>" +
+            "</div>" +
+          "</div>" +
+
+          '<div class="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-slate-600">' +
+            '<span><strong class="text-slate-800">' + escapeHtml(I18N.t("wa.name")) + ":</strong> " + escapeHtml(row.patient_name || "—") + "</span>" +
+            '<span><strong class="text-slate-800">' + escapeHtml(I18N.t("wa.date")) + ":</strong> " + escapeHtml(apptDate ? formatBookingDateDisplay(apptDate) : "—") + "</span>" +
+          "</div>" +
+
+          queueBannerHtml +
+
+          (statusKey !== "Cancelled"
+            ? '<div class="mt-3 pt-2.5 border-t border-slate-100 flex justify-end">' +
+                '<button type="button" data-lookup-slip-idx="' + idx + '" class="inline-flex items-center gap-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 border border-brand-200 text-brand-800 font-bold text-xs px-3 py-2 transition cursor-pointer">' +
+                  "<span>🎟️ " + escapeHtml(I18N.t("lookup.viewSlip")) + "</span>" +
+                "</button>" +
+              "</div>"
+            : "") +
+        "</article>"
+      );
+    }).join("");
+  }
+
+  function handleSerialLookup(e) {
+    e.preventDefault();
+    if (isLookingUp) return;
+
+    var phoneInput = $("lookupPhone");
+    var errEl = $("eLookupPhone");
+    var dateInput = $("lookupDate");
+    var phone = normalizeBdPhone(phoneInput ? phoneInput.value : "");
+    var errPhone = !/^01[3-9]\d{8}$/.test(phone);
+
+    setFieldError(phoneInput, errEl, errPhone);
+    if (errPhone) {
+      if (phoneInput) phoneInput.focus();
+      return;
+    }
+
+    if (!window.supabaseClient) {
+      lastLookupState = { type: "error", reason: "Supabase client unavailable", rows: [] };
+      renderLookupResults();
+      return;
+    }
+
+    rememberLastPhone(phone);
+    var dateVal = dateInput && dateInput.value ? dateInput.value : null;
+
+    setLookupBusy(true);
+    window.supabaseClient
+      .rpc("lookup_patient_serials", {
+        p_patient_phone: phone,
+        p_appointment_date: dateVal
+      })
+      .then(function (res) {
+        if (res && res.error) {
+          lastLookupState = {
+            type: "error",
+            reason: res.error.message || "Database error",
+            rows: []
+          };
+        } else {
+          lastLookupState = {
+            type: "results",
+            phone: phone,
+            rows: Array.isArray(res && res.data) ? res.data : []
+          };
+        }
+        renderLookupResults();
+      })
+      .catch(function (err) {
+        lastLookupState = {
+          type: "error",
+          reason: (err && err.message) || "Connection failed",
+          rows: []
+        };
+        renderLookupResults();
+      })
+      .finally(function () {
+        setLookupBusy(false);
       });
   }
 
@@ -1268,9 +1650,14 @@
       renderFormTargetOptions();
       updateDayHint();
       renderFormStatus();
+      renderLookupResults();
       if (isSubmitting) {
         var submitText = $("serialSubmitText");
         if (submitText) submitText.textContent = I18N.t("form.submitSaving");
+      }
+      if (isLookingUp) {
+        var lookupText = $("lookupSubmitText");
+        if (lookupText) lookupText.textContent = I18N.t("lookup.searching");
       }
     });
 
@@ -1362,6 +1749,33 @@
         renderFormStatus();
         var nameInput = $("fName");
         if (nameInput) nameInput.focus();
+        return;
+      }
+
+      var lookupSlipBtn = e.target.closest("[data-lookup-slip-idx]");
+      if (lookupSlipBtn && lastLookupState && Array.isArray(lastLookupState.rows)) {
+        var rowIdx = parseInt(lookupSlipBtn.getAttribute("data-lookup-slip-idx"), 10);
+        var row = lastLookupState.rows[rowIdx];
+        if (row) {
+          openSerialSlipModal({
+            serial_no: row.serial_no,
+            serial_code: formatSerialCode(row.serial_no) || "SL-01",
+            name: row.patient_name || "",
+            phone: row.patient_phone || "",
+            doctor_name: row.doctor_name || row.doctor_name_bn || "",
+            department: row.department || "",
+            dateVal: String(row.appointment_date || "").slice(0, 10),
+            status: row.status || "Pending"
+          });
+        }
+        return;
+      }
+
+      var lookupBookNewBtn = e.target.closest("[data-lookup-book-new]");
+      if (lookupBookNewBtn) {
+        switchSerialCardTab("book");
+        var fNameEl = $("fName");
+        if (fNameEl) fNameEl.focus();
       }
     });
 
@@ -1413,6 +1827,19 @@
     if (openFromBarBtn) {
       openFromBarBtn.addEventListener("click", function () {
         setQueuePopoverOpen(true);
+      });
+    }
+    var openLookupFromPopoverBtn = $("openLookupFromPopoverBtn");
+    if (openLookupFromPopoverBtn) {
+      openLookupFromPopoverBtn.addEventListener("click", function () {
+        setQueuePopoverOpen(false);
+        switchSerialCardTab("lookup");
+        var serialSection = $("serial");
+        if (serialSection) serialSection.scrollIntoView({ behavior: "smooth" });
+        setTimeout(function () {
+          var lp = $("lookupPhone");
+          if (lp) lp.focus({ preventScroll: true });
+        }, 450);
       });
     }
     document.addEventListener("click", function (e) {
@@ -1479,7 +1906,24 @@
       });
     }
 
-    // Form listeners
+    // Serial Card Tabs (Book New vs Check My Serial) & Form listeners
+    var tabBookBtn = $("serialTabBook");
+    var tabLookupBtn = $("serialTabLookup");
+    if (tabBookBtn) {
+      tabBookBtn.addEventListener("click", function () {
+        switchSerialCardTab("book");
+      });
+    }
+    if (tabLookupBtn) {
+      tabLookupBtn.addEventListener("click", function () {
+        switchSerialCardTab("lookup");
+      });
+    }
+    var lookupForm = $("serialLookupForm");
+    if (lookupForm) {
+      lookupForm.addEventListener("submit", handleSerialLookup);
+    }
+
     var form = $("serialForm");
     if (form) {
       form.addEventListener("submit", handleSerialSubmit);
@@ -1495,11 +1939,12 @@
     // Apply initial language (Bangla by default, or saved preference), then load live doctors from Supabase
     I18N.apply();
     loadActiveDoctorsFromSupabase();
+    startPublicLiveQueueRealtime();
 
-    // Auto-refresh live chamber queue silently every 20 seconds
+    // Gentle 60s silent fallback poll + tab-focus refresh (Realtime handles <1s live updates)
     setInterval(function () {
       if (!document.hidden) refreshLiveQueueSilently();
-    }, 20000);
+    }, 60000);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) refreshLiveQueueSilently();
     });
