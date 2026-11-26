@@ -35,8 +35,25 @@
   </script>
 
   <style>
+    html, body {
+      max-width: 100vw;
+      overflow-x: hidden;
+      overflow-x: clip;
+    }
+    body:has(dialog[open]) {
+      overflow: hidden;
+    }
     dialog:not([open]) {
       display: none !important;
+    }
+    dialog[open] {
+      width: 100vw;
+      max-width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      max-height: 100dvh;
+      box-sizing: border-box;
+      overflow-x: hidden;
     }
     dialog::backdrop {
       background: transparent;
@@ -376,28 +393,28 @@
       <section class="no-print w-full max-w-full min-w-0 bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-5 shadow-sm space-y-3.5">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-2.5 items-stretch lg:items-center min-w-0">
           <!-- Search by patient name or phone -->
-          <div class="relative w-full sm:col-span-2 lg:flex-1 lg:min-w-[220px]">
+          <div class="relative w-full min-w-0 max-w-full sm:col-span-2 lg:flex-1 lg:min-w-[220px]">
             <label for="filterSearch" class="sr-only">Search by patient name or phone</label>
             <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"><use href="#i-search"/></svg>
             <input id="filterSearch" type="search" autocomplete="off"
                    placeholder="Search patient name or phone (e.g. 017...)"
-                   class="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-base sm:text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
+                   class="w-full max-w-full min-w-0 rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-base sm:text-sm focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15" />
           </div>
 
           <!-- Doctor filter -->
-          <div class="w-full sm:w-auto lg:min-w-[180px] min-w-0">
+          <div class="w-full max-w-full min-w-0 overflow-hidden sm:w-auto lg:min-w-[180px] lg:max-w-[260px]">
             <label for="filterDoctor" class="sr-only">Filter by doctor</label>
             <select id="filterDoctor"
-                    class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base sm:text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
+                    class="w-full max-w-full min-w-0 truncate rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base sm:text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
               <option value="All">Doctor: All</option>
             </select>
           </div>
 
           <!-- Status filter -->
-          <div class="w-full sm:w-auto lg:min-w-[145px] min-w-0">
+          <div class="w-full max-w-full min-w-0 overflow-hidden sm:w-auto lg:min-w-[145px]">
             <label for="filterStatus" class="sr-only">Filter by status</label>
             <select id="filterStatus"
-                    class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base sm:text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
+                    class="w-full max-w-full min-w-0 truncate rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base sm:text-sm font-medium text-slate-700 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/15">
               <option value="All">Status: All</option>
               <option value="Pending">Pending</option>
               <option value="Confirmed">Confirmed</option>
@@ -443,7 +460,7 @@
       </section>
 
       <!-- Appointments Table (Horizontal scroll strictly contained inside this card) -->
-      <section id="tableCard" class="w-full max-w-full min-w-0 bg-white rounded-2xl shadow-sm">
+      <section id="tableCard" class="w-full max-w-full min-w-0 overflow-hidden bg-white rounded-2xl shadow-sm">
         <div id="tableScrollWrap" class="w-full max-w-full overflow-x-auto rounded-xl border border-slate-200">
           <table id="appointmentsTable" class="w-full text-left border-collapse min-w-[820px]">
             <thead>
@@ -534,7 +551,7 @@
         </section>
 
         <!-- Doctors Responsive Table -->
-        <section class="w-full max-w-full min-w-0 bg-white rounded-2xl shadow-sm">
+        <section class="w-full max-w-full min-w-0 overflow-hidden bg-white rounded-2xl shadow-sm">
           <div class="w-full max-w-full overflow-x-auto rounded-xl border border-slate-200">
             <table id="doctorsTable" class="w-full text-left border-collapse min-w-[860px]">
               <thead>
@@ -609,10 +626,10 @@
         </div>
 
         <!-- Quick-fill preset helper from clinic's verified doctors & services -->
-        <div class="rounded-xl bg-brand-50/70 border border-brand-100 p-3 min-w-0">
+        <div class="rounded-xl bg-brand-50/70 border border-brand-100 p-3 min-w-0 max-w-full overflow-hidden">
           <label for="mQuickPreset" class="block text-[11px] font-bold uppercase tracking-wider text-brand-800 mb-1">Quick-Fill Clinic Doctor / Service (Optional)</label>
           <select id="mQuickPreset"
-                  class="w-full max-w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-base font-medium text-slate-700 focus:border-brand-600 focus:outline-none">
+                  class="w-full max-w-full min-w-0 truncate rounded-lg border border-brand-200 bg-white px-3 py-2 text-base font-medium text-slate-700 focus:border-brand-600 focus:outline-none">
             <option value="">— Select to auto-fill Doctor &amp; Department —</option>
           </select>
         </div>

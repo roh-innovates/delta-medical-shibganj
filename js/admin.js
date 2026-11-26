@@ -515,7 +515,7 @@
             '<span class="print-only font-semibold">' + escapeHtml(currentStatus) + "</span>" +
             '<label class="sr-only">Update status for ' + escapeHtml(row.patient_name) + "</label>" +
             '<select data-inline-status="' + escapeHtml(row.id) + '" ' +
-                    'class="no-print status-select-' + currentStatus + ' w-full rounded-xl border px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition">' +
+                    'class="no-print status-select-' + currentStatus + ' w-full rounded-xl border px-2.5 py-1.5 text-base sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition">' +
               statusOptions +
             "</select>" +
           "</td>" +
@@ -681,7 +681,7 @@
         row.status = nextStatus;
         selectEl.className =
           "no-print status-select-" + nextStatus +
-          " w-full rounded-xl border px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition";
+          " w-full rounded-xl border px-2.5 py-1.5 text-base sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition";
         var printSpan = selectEl.parentElement && selectEl.parentElement.querySelector("span.print-only");
         if (printSpan) printSpan.textContent = nextStatus;
         updateCounters();
@@ -728,7 +728,10 @@
 
     var dlg = $("serialModal");
     if (dlg && typeof dlg.showModal === "function") dlg.showModal();
-    setTimeout(function () { $("mPatientName").focus(); }, 60);
+    // Auto-focus only on desktop; on mobile it triggers the virtual keyboard during dialog mount and distorts viewport scale
+    if (window.innerWidth >= 768) {
+      setTimeout(function () { $("mPatientName").focus(); }, 60);
+    }
   }
 
   function openEditModal(idStr) {
@@ -1408,7 +1411,9 @@
 
     var dlg = $("doctorModal");
     if (dlg && typeof dlg.showModal === "function") dlg.showModal();
-    setTimeout(function () { $("dNameBn").focus(); }, 60);
+    if (window.innerWidth >= 768) {
+      setTimeout(function () { $("dNameBn").focus(); }, 60);
+    }
   }
 
   function openEditDoctorModal(idStr) {
