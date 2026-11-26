@@ -513,8 +513,8 @@
           // 5. Inline Status Select (Screen) + Plain Text Status (Print)
           '<td class="py-3.5 px-4">' +
             '<span class="print-only font-semibold">' + escapeHtml(currentStatus) + "</span>" +
-            '<label class="sr-only">Update status for ' + escapeHtml(row.patient_name) + "</label>" +
             '<select data-inline-status="' + escapeHtml(row.id) + '" ' +
+                    'aria-label="Update status for ' + escapeHtml(row.patient_name) + '" ' +
                     'class="no-print status-select-' + currentStatus + ' w-full rounded-xl border px-2.5 py-1.5 text-base sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition">' +
               statusOptions +
             "</select>" +
