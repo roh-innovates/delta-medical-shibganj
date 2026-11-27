@@ -21,6 +21,9 @@
     { label: "24/7 Emergency (জরুরি বিভাগ)", doctor: "Duty Doctor", dept: "24/7 Emergency" }
   ];
 
+  var AUTO_COMPLETE_KEY = "dmc-admin-auto-complete";
+  var SOUND_ALERT_KEY = "dmc-admin-sound-alert";
+
   var appointments = [];
   var doctorsList = [];
   var activeTab = "appointments";
@@ -37,6 +40,12 @@
   var pendingDeleteTarget = null;
   var toastTimer = null;
   var realtimeChannel = null;
+  var autoCompleteOnNext = true;
+  var soundAlertEnabled = true;
+  var alertAudioCtx = null;
+  var unseenNewBookings = 0;
+  var lastSelfBookingAt = 0;
+  var selfCreatedIds = {};
 
   function $(id) {
     return document.getElementById(id);
@@ -182,20 +191,163 @@
     return "https://wa.me/" + waPhone + "?text=" + encodeURIComponent(msg);
   }
 
-  /* ------------ Toast & Error Alert Helpers ------------ */
-  function showToast(msg, isError) {
+  /* ------------ Toast, Sound Alert & New Booking Badge Helpers ------------ */
+  function showToast(msg, variantOrError, durationMs) {
     var el = $("toast");
     if (!el) return;
     el.textContent = msg;
+    var colorCls = "bg-brand-950 text-white border-white/10";
+    if (variantOrError === true || variantOrError === "error") {
+      colorCls = "bg-rose-700 text-white border-rose-500";
+    } else if (variantOrError === "success" || variantOrError === "incoming") {
+      colorCls = "bg-emerald-700 text-white border-emerald-400";
+    }
     el.className =
-      "fixed bottom-5 right-5 z-50 max-w-sm rounded-2xl px-4 py-3 text-sm font-semibold shadow-xl border " +
-      (isError
-        ? "bg-rose-700 text-white border-rose-500"
-        : "bg-brand-950 text-white border-white/10");
+      "fixed bottom-4 left-3 right-3 sm:left-auto sm:right-5 z-50 sm:max-w-sm rounded-2xl px-4 py-3 text-sm font-semibold shadow-xl border " +
+      colorCls;
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function () {
       el.classList.add("hidden");
-    }, 3400);
+    }, durationMs || 3400);
+  }
+
+  function ensureAlertAudioContext() {
+    if (alertAudioCtx) return alertAudioCtx;
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    try {
+      alertAudioCtx = new Ctx();
+    } catch (e) {
+      alertAudioCtx = null;
+    }
+    return alertAudioCtx;
+  }
+
+  function unlockAlertAudio(playTest) {
+    var ctx = ensureAlertAudioContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended" && typeof ctx.resume === "function") {
+      ctx.resume()
+        .then(function () {
+          if (playTest && soundAlertEnabled) playNewBookingChime();
+        })
+        .catch(function () { /* ignore */ });
+    } else if (playTest && soundAlertEnabled) {
+      playNewBookingChime();
+    }
+  }
+
+  function playNewBookingChime() {
+    if (!soundAlertEnabled) return;
+    var ctx = ensureAlertAudioContext();
+    if (!ctx || ctx.state === "suspended") return;
+    try {
+      var now = ctx.currentTime + 0.02;
+      // Pleasant 2-note reception ding-dong: A5 -> D6
+      var notes = [
+        { freq: 880.0,   start: 0.0,  dur: 0.34, vol: 0.14 },
+        { freq: 1174.66, start: 0.15, dur: 0.52, vol: 0.16 }
+      ];
+      notes.forEach(function (n) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(n.freq, now + n.start);
+        gain.gain.setValueAtTime(0.0001, now + n.start);
+        gain.gain.linearRampToValueAtTime(n.vol, now + n.start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + n.start);
+        osc.stop(now + n.start + n.dur + 0.04);
+      });
+    } catch (e) {
+      /* ignore audio playback errors */
+    }
+  }
+
+  function updateSoundAlertUI() {
+    var btn = $("soundAlertToggleBtn");
+    var icon = $("soundAlertIcon");
+    var label = $("soundAlertLabel");
+    if (!btn) return;
+    if (soundAlertEnabled) {
+      btn.className =
+        "inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs px-2.5 py-2 sm:py-2.5 transition whitespace-nowrap cursor-pointer";
+      if (icon) icon.textContent = "🔔";
+      if (label) label.textContent = "Alert On";
+    } else {
+      btn.className =
+        "inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 font-semibold text-xs px-2.5 py-2 sm:py-2.5 transition whitespace-nowrap cursor-pointer";
+      if (icon) icon.textContent = "🔕";
+      if (label) label.textContent = "Muted";
+    }
+  }
+
+  function updateNewBookingBadgeUI() {
+    var badge = $("newBookingBadge");
+    if (!badge) return;
+    if (unseenNewBookings > 0) {
+      badge.textContent = "+" + unseenNewBookings + " New";
+      badge.classList.remove("hidden");
+    } else {
+      badge.classList.add("hidden");
+    }
+  }
+
+  function clearNewBookingAlerts() {
+    unseenNewBookings = 0;
+    updateNewBookingBadgeUI();
+    var banner = $("incomingBookingBanner");
+    if (banner) banner.classList.add("hidden");
+  }
+
+  function isSelfCreatedAppointment(row) {
+    if (row && row.id != null && selfCreatedIds[String(row.id)]) {
+      delete selfCreatedIds[String(row.id)];
+      return true;
+    }
+    if (Date.now() - lastSelfBookingAt < 3500) {
+      return true;
+    }
+    return false;
+  }
+
+  function handleIncomingRealtimeBooking(newRow) {
+    if (isSelfCreatedAppointment(newRow)) return;
+
+    unseenNewBookings += 1;
+    updateNewBookingBadgeUI();
+    playNewBookingChime();
+
+    var slCode = newRow && newRow.serial_no ? formatSerialCode(newRow.serial_no) : "";
+    var pName = (newRow && newRow.patient_name) || "নতুন রোগী";
+    var docName = (newRow && newRow.doctor_name) || "";
+    var apptDate = (newRow && newRow.appointment_date) || "";
+
+    var summaryParts = [];
+    if (slCode) summaryParts.push(slCode);
+    summaryParts.push(pName);
+    if (docName) summaryParts.push(docName);
+    if (apptDate) summaryParts.push(apptDate);
+
+    var banner = $("incomingBookingBanner");
+    var titleEl = $("incomingBookingTitle");
+    var metaEl = $("incomingBookingMeta");
+    if (banner && titleEl && metaEl) {
+      titleEl.textContent =
+        unseenNewBookings > 1
+          ? unseenNewBookings + "টি নতুন অনলাইন সিরিয়াল এসেছে!"
+          : "নতুন অনলাইন সিরিয়াল এসেছে!" + (slCode ? " (" + slCode + ")" : "");
+      metaEl.textContent = summaryParts.join(" · ");
+      banner.classList.remove("hidden");
+    }
+
+    showToast(
+      "🔔 নতুন সিরিয়াল: " + (slCode ? slCode + " — " : "") + pName + (docName ? " (" + docName + ")" : ""),
+      "incoming",
+      5500
+    );
   }
 
   function setDbError(message) {
@@ -649,6 +801,7 @@
         populateDoctorFilter();
         updateCounters();
         renderTable();
+        renderLiveQueueControls();
       })
       .catch(function (err) {
         setDbError((err && err.message) || "Failed to load appointments.");
@@ -686,6 +839,7 @@
         if (printSpan) printSpan.textContent = nextStatus;
         updateCounters();
         if (filters.status !== "All") renderTable();
+        renderLiveQueueControls();
         showToast("Status updated to " + nextStatus);
       })
       .catch(function (err) {
@@ -824,6 +978,8 @@
         .update(payload)
         .eq("id", targetId);
     } else {
+      // Suppress false "incoming online booking" chime for reception's own walk-in entry
+      lastSelfBookingAt = Date.now();
       // Prefer atomic server-side RPC (shares advisory lock with public bookings)
       req = window.supabaseClient
         .rpc("create_admin_booking", {
@@ -864,8 +1020,13 @@
                 return fallbackRes;
               });
           }
-          if (!res.error && res.data && typeof res.data === "object" && res.data.serial_no != null) {
-            res._assignedSerial = parseInt(res.data.serial_no, 10);
+          if (!res.error && res.data && typeof res.data === "object") {
+            if (res.data.serial_no != null) {
+              res._assignedSerial = parseInt(res.data.serial_no, 10);
+            }
+            if (res.data.id != null) {
+              selfCreatedIds[String(res.data.id)] = true;
+            }
           }
           return res;
         });
@@ -1174,6 +1335,51 @@
   /* ------------ Live Chamber Queue ("Now Serving") Controls ------------ */
   var queueUpdatingIds = {};
 
+  function appointmentMatchesDoctor(row, doc) {
+    if (!row || !doc) return false;
+    var rDoc = String(row.doctor_name || "").trim().toLowerCase();
+    if (!rDoc) return false;
+    var en = String(doc.name_en || "").trim().toLowerCase();
+    var bn = String(doc.name_bn || "").trim().toLowerCase();
+    return (en && rDoc === en) || (bn && rDoc === bn);
+  }
+
+  function getDoctorTodayQueueContext(doc, today, currentNum) {
+    var todayRows = appointments
+      .filter(function (row) {
+        return (
+          String(row.appointment_date || "").slice(0, 10) === today &&
+          row.status !== "Cancelled" &&
+          appointmentMatchesDoctor(row, doc)
+        );
+      })
+      .sort(function (a, b) {
+        return (Number(a.serial_no) || 0) - (Number(b.serial_no) || 0);
+      });
+
+    var currentRow = null;
+    var nextRow = null;
+    var remainingCount = 0;
+
+    todayRows.forEach(function (row) {
+      var sn = Number(row.serial_no) || 0;
+      if (currentNum > 0 && sn === currentNum && !currentRow) {
+        currentRow = row;
+      }
+      if (sn > currentNum && row.status !== "Completed") {
+        remainingCount += 1;
+        if (!nextRow) nextRow = row;
+      }
+    });
+
+    return {
+      todayTotal: todayRows.length,
+      currentRow: currentRow,
+      nextRow: nextRow,
+      remainingCount: remainingCount
+    };
+  }
+
   function renderLiveQueueControls() {
     var grid = $("liveQueueControlGrid");
     var datePill = $("liveQueueDatePill");
@@ -1230,6 +1436,38 @@
       if (doc.room_no) subParts.push(doc.room_no);
       var subText = subParts.join(" · ");
 
+      var qCtx = getDoctorTodayQueueContext(doc, today, currentNum);
+      var patientStripHtml = "";
+      if (qCtx.nextRow) {
+        var nextSl = formatSerialCode(qCtx.nextRow.serial_no);
+        patientStripHtml =
+          '<div class="pt-1.5 border-t border-slate-200/70 flex items-center justify-between gap-2 text-[11px] min-w-0">' +
+            '<span class="truncate min-w-0 flex-1 text-slate-600" title="Next: ' + escapeHtml((nextSl ? nextSl + " · " : "") + (qCtx.nextRow.patient_name || "")) + '">' +
+              '<strong class="text-emerald-700">Next' + (nextSl ? ": " + escapeHtml(nextSl) : "") + "</strong> · " +
+              escapeHtml(qCtx.nextRow.patient_name || "—") +
+            "</span>" +
+            '<span class="text-[10px] font-semibold text-slate-400 whitespace-nowrap shrink-0">' +
+              qCtx.remainingCount + " left" +
+            "</span>" +
+          "</div>";
+      } else if (qCtx.todayTotal > 0) {
+        if (qCtx.currentRow) {
+          patientStripHtml =
+            '<div class="pt-1.5 border-t border-slate-200/70 flex items-center justify-between gap-2 text-[11px] min-w-0">' +
+              '<span class="truncate min-w-0 flex-1 text-slate-600">' +
+                '<strong class="text-brand-700">Now: ' + escapeHtml(formatSerialCode(qCtx.currentRow.serial_no)) + "</strong> · " +
+                escapeHtml(qCtx.currentRow.patient_name || "—") +
+              "</span>" +
+              '<span class="text-[10px] font-semibold text-emerald-600 whitespace-nowrap shrink-0">Last</span>' +
+            "</div>";
+        } else {
+          patientStripHtml =
+            '<div class="pt-1.5 border-t border-slate-200/70 flex items-center justify-between gap-2 text-[11px] text-slate-500 min-w-0">' +
+              '<span class="truncate">✓ All ' + qCtx.todayTotal + " booked serial(s) served</span>" +
+            "</div>";
+        }
+      }
+
       return (
         '<div class="min-w-0 rounded-xl border ' +
           (isLive ? "bg-emerald-50/40 border-emerald-200" : "bg-white border-slate-200/90 hover:border-slate-300") +
@@ -1257,6 +1495,8 @@
                       ' class="h-7 px-2 rounded-md border border-slate-200 bg-white hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 text-slate-500 font-semibold text-[11px] leading-none transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Reset</button>' +
             "</div>" +
           "</div>" +
+
+          patientStripHtml +
         "</div>"
       );
     }).join("");
@@ -1278,6 +1518,19 @@
     else if (action === "prev") nextSerial = Math.max(0, currentNum - 1);
     else if (action === "reset") nextSerial = 0;
 
+    // Identify previous serial's active appointment(s) to auto-mark Completed when advancing
+    var prevRowsToComplete = [];
+    if (action === "next" && autoCompleteOnNext && currentNum > 0) {
+      prevRowsToComplete = appointments.filter(function (row) {
+        return (
+          String(row.appointment_date || "").slice(0, 10) === today &&
+          Number(row.serial_no) === currentNum &&
+          (row.status === "Pending" || row.status === "Confirmed") &&
+          appointmentMatchesDoctor(row, doc)
+        );
+      });
+    }
+
     queueUpdatingIds[key] = true;
     renderLiveQueueControls();
 
@@ -1295,6 +1548,30 @@
         }
         doc.current_serial = nextSerial;
         doc.queue_updated_date = today;
+
+        if (prevRowsToComplete.length > 0) {
+          var prevIds = prevRowsToComplete.map(function (r) { return r.id; });
+          return window.supabaseClient
+            .from("appointments")
+            .update({ status: "Completed" })
+            .in("id", prevIds)
+            .then(function (compRes) {
+              var prevCode = formatSerialCode(currentNum);
+              if (!compRes.error) {
+                prevRowsToComplete.forEach(function (r) { r.status = "Completed"; });
+                updateCounters();
+                renderTable();
+                showToast(
+                  (doc.name_en || doc.name_bn) +
+                    " — Now Serving " + formatSerialCode(nextSerial) +
+                    " (" + prevCode + " Completed ✓)"
+                );
+              } else {
+                showToast((doc.name_en || doc.name_bn) + " — Now Serving " + formatSerialCode(nextSerial));
+              }
+            });
+        }
+
         var label = nextSerial > 0
           ? "Now Serving " + formatSerialCode(nextSerial)
           : "Queue Reset";
@@ -1689,6 +1966,7 @@
           appointments = appointments.filter(function (r) { return r.id !== target.row.id; });
           updateCounters();
           renderTable();
+          renderLiveQueueControls();
           showToast("Serial record deleted");
         }
         closeDeleteModal();
@@ -1702,7 +1980,7 @@
       });
   }
 
-  /* ------------ Realtime Subscription (Optional Auto-Sync) ------------ */
+  /* ------------ Realtime Subscription (Auto-Sync + New-Booking Alert) ------------ */
   function startRealtimeSync() {
     if (!window.supabaseClient || realtimeChannel) return;
     try {
@@ -1710,7 +1988,22 @@
         .channel("admin-clinic-feed")
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "appointments" },
+          { event: "INSERT", schema: "public", table: "appointments" },
+          function (payload) {
+            handleIncomingRealtimeBooking(payload && payload.new ? payload.new : null);
+            loadAppointments(true);
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "appointments" },
+          function () {
+            loadAppointments(true);
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "DELETE", schema: "public", table: "appointments" },
           function () {
             loadAppointments(true);
           }
@@ -1753,6 +2046,7 @@
       startRealtimeSync();
     } else {
       stopRealtimeSync();
+      clearNewBookingAlerts();
       appointments = [];
       doctorsList = [];
       dashView.classList.add("hidden");
@@ -1829,9 +2123,75 @@
       pw.type = pw.type === "password" ? "text" : "password";
     });
 
+    // Restore Auto-Complete & Sound Alert preferences
+    try {
+      var savedAuto = localStorage.getItem(AUTO_COMPLETE_KEY);
+      if (savedAuto === "off") autoCompleteOnNext = false;
+      var savedAlert = localStorage.getItem(SOUND_ALERT_KEY);
+      if (savedAlert === "off") soundAlertEnabled = false;
+    } catch (e) { /* ignore storage errors */ }
+
+    var autoCompleteToggle = $("autoCompleteQueueToggle");
+    if (autoCompleteToggle) {
+      autoCompleteToggle.checked = autoCompleteOnNext;
+      autoCompleteToggle.addEventListener("change", function () {
+        autoCompleteOnNext = !!autoCompleteToggle.checked;
+        try {
+          localStorage.setItem(AUTO_COMPLETE_KEY, autoCompleteOnNext ? "on" : "off");
+        } catch (e) { /* ignore */ }
+        showToast(
+          autoCompleteOnNext
+            ? "Auto-Complete ON: previous serial will mark Completed on +1 Next"
+            : "Auto-Complete OFF"
+        );
+      });
+    }
+
+    updateSoundAlertUI();
+    var soundAlertBtn = $("soundAlertToggleBtn");
+    if (soundAlertBtn) {
+      soundAlertBtn.addEventListener("click", function () {
+        soundAlertEnabled = !soundAlertEnabled;
+        try {
+          localStorage.setItem(SOUND_ALERT_KEY, soundAlertEnabled ? "on" : "off");
+        } catch (e) { /* ignore */ }
+        updateSoundAlertUI();
+        if (soundAlertEnabled) {
+          unlockAlertAudio(true);
+          showToast("🔔 New-booking sound alert enabled");
+        } else {
+          showToast("🔕 New-booking sound alert muted");
+        }
+      });
+    }
+
+    // Silently unlock Web Audio on first click/tap anywhere outside sound toggle
+    document.addEventListener("pointerdown", function (e) {
+      if (e.target && e.target.closest && e.target.closest("#soundAlertToggleBtn")) return;
+      if (soundAlertEnabled && (!alertAudioCtx || alertAudioCtx.state === "suspended")) {
+        unlockAlertAudio(false);
+      }
+    }, { passive: true });
+
+    // Incoming booking alert banner actions
+    var incomingViewBtn = $("incomingBookingViewBtn");
+    if (incomingViewBtn) {
+      incomingViewBtn.addEventListener("click", function () {
+        clearNewBookingAlerts();
+        switchTab("appointments");
+        var tableCard = $("tableCard");
+        if (tableCard) tableCard.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+    var incomingDismissBtn = $("incomingBookingDismissBtn");
+    if (incomingDismissBtn) {
+      incomingDismissBtn.addEventListener("click", clearNewBookingAlerts);
+    }
+
     // Tab switcher events
     $("tabAppointmentsBtn").addEventListener("click", function () {
       switchTab("appointments");
+      clearNewBookingAlerts();
     });
     $("tabDoctorsBtn").addEventListener("click", function () {
       switchTab("doctors");
@@ -1842,6 +2202,7 @@
     $("newSerialBtn").addEventListener("click", openCreateModal);
     $("emptyNewBtn").addEventListener("click", openCreateModal);
     $("refreshBtn").addEventListener("click", function () {
+      clearNewBookingAlerts();
       loadAppointments(false);
       loadDoctors(false);
     });

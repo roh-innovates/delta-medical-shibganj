@@ -249,6 +249,12 @@
             <span class="sm:hidden">New</span>
           </button>
 
+          <button id="soundAlertToggleBtn" type="button" title="Toggle new online booking sound alert"
+                  class="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs px-2.5 py-2 sm:py-2.5 transition whitespace-nowrap cursor-pointer">
+            <span id="soundAlertIcon" aria-hidden="true">🔔</span>
+            <span id="soundAlertLabel" class="hidden sm:inline">Alert On</span>
+          </button>
+
           <button id="refreshBtn" type="button" title="Refresh bookings"
                   class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 p-2 sm:p-2.5 transition">
             <svg id="refreshIcon" class="w-4 h-4"><use href="#i-refresh"/></svg>
@@ -283,6 +289,7 @@
                 class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl px-3.5 sm:px-4 py-2.5 text-sm font-bold transition bg-brand-600 text-white shadow-sm cursor-pointer">
           <span class="truncate">📋 রোগীর সিরিয়াল (Appointments)</span>
           <span id="tabAppointmentsCount" class="rounded-full bg-white/20 px-2 py-0.5 text-xs font-extrabold shrink-0">0</span>
+          <span id="newBookingBadge" class="hidden rounded-full bg-delta-600 text-white px-2 py-0.5 text-[11px] font-extrabold shrink-0 animate-pulse">+0 New</span>
         </button>
         <button id="tabDoctorsBtn" type="button" role="tab" aria-selected="false" aria-controls="doctorsPanel"
                 class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl px-3.5 sm:px-4 py-2.5 text-sm font-bold transition text-slate-600 hover:bg-slate-100 cursor-pointer">
@@ -290,6 +297,27 @@
           <span id="tabDoctorsCount" class="rounded-full bg-slate-200/80 text-slate-700 px-2 py-0.5 text-xs font-extrabold shrink-0">0</span>
         </button>
       </nav>
+
+      <!-- Incoming New Online Booking Alert Banner -->
+      <div id="incomingBookingBanner" class="no-print hidden rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 shadow-sm flex flex-wrap items-center justify-between gap-2.5" role="status" aria-live="polite">
+        <div class="flex items-center gap-2.5 min-w-0 flex-1">
+          <span class="w-8 h-8 rounded-xl bg-emerald-600 text-white grid place-items-center shrink-0 text-base" aria-hidden="true">🔔</span>
+          <div class="min-w-0">
+            <p id="incomingBookingTitle" class="font-extrabold text-emerald-950 text-xs sm:text-sm leading-snug break-words">নতুন অনলাইন সিরিয়াল এসেছে!</p>
+            <p id="incomingBookingMeta" class="text-xs text-emerald-800 break-words mt-0.5"></p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button type="button" id="incomingBookingViewBtn"
+                  class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 transition cursor-pointer whitespace-nowrap">
+            দেখুন (View)
+          </button>
+          <button type="button" id="incomingBookingDismissBtn" aria-label="Dismiss notification"
+                  class="w-7 h-7 rounded-lg hover:bg-emerald-200/70 text-emerald-800 grid place-items-center cursor-pointer transition">
+            <svg class="w-4 h-4"><use href="#i-x"/></svg>
+          </button>
+        </div>
+      </div>
 
       <!-- Database / Network Alert Banner -->
       <div id="dbErrorBanner" class="no-print hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 break-words" role="alert"></div>
@@ -306,9 +334,15 @@
               লাইভ চেম্বার সিরিয়াল <span class="hidden sm:inline font-medium text-xs text-slate-500">(Now Serving Control)</span>
             </h2>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
+          <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
             <span id="liveQueueActiveCount" class="inline-flex items-center rounded-full bg-slate-100 text-slate-600 px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap"></span>
-            <span id="liveQueueDatePill" class="hidden sm:inline-flex items-center rounded-full bg-white border border-slate-200 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 whitespace-nowrap"></span>
+            <span id="liveQueueDatePill" class="hidden md:inline-flex items-center rounded-full bg-white border border-slate-200 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 whitespace-nowrap"></span>
+            <label class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 cursor-pointer select-none whitespace-nowrap"
+                   title="Automatically mark previous serial as Completed when clicking +1 Next">
+              <input id="autoCompleteQueueToggle" type="checkbox" checked
+                     class="w-3.5 h-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" />
+              <span>Auto-Complete</span>
+            </label>
             <a href="tv.html" target="_blank" rel="noopener" title="Open Waiting Room TV Display"
                class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-2 py-1 text-[11px] font-bold transition whitespace-nowrap">
               <span>📺 TV</span>
