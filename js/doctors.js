@@ -2,7 +2,7 @@
  * Doctor Chamber Directory: DATA FILE
  * ---------------------------------------------------------------------
  * Source: the hospital's own doctor posters in ./assets/
- *   (doctor.jpg, doctor2–8.jpg, doctor10–13.jpg). Nothing here is invented.
+ *   (doctor.webp, doctor2–8.webp, doctor10–13.webp). Nothing here is invented.
  *   Please re-check schedules against the reception's latest list.
  *
  * The directory cards, specialty/day filters and the serial-form
@@ -19,7 +19,7 @@
  *     schedule: [                                      // daily:true = every day
  *       { days: ["fri"], bn: "সকাল ৯টা – বিকাল ৪টা", en: "9 AM – 4 PM" }
  *     ],
- *     poster: "assets/doctorX.jpg",
+ *     poster: "assets/doctorX.webp",
  *     face: { x: 75, y: 30 }                           // % focus point for the thumbnail crop
  *   }
  * ===================================================================== */
@@ -65,7 +65,7 @@ window.DOCTORS = [
     },
     specialties: ["gynae", "pediatrics"],
     schedule: [{ daily: true, bn: "সকাল ৯টা থেকে সন্ধ্যা পর্যন্ত", en: "9 AM – evening" }],
-    poster: "assets/doctor.jpg",
+    poster: "assets/doctor.webp",
     face: { x: 79, y: 36 }
   },
   {
@@ -82,7 +82,7 @@ window.DOCTORS = [
     },
     specialties: ["medicine", "neuro", "skin"],
     schedule: [{ daily: true, bn: "বিকাল ৩টা – রাত ৮টা", en: "3 PM – 8 PM" }],
-    poster: "assets/doctor2.jpg",
+    poster: "assets/doctor2.webp",
     face: { x: 73, y: 41 }
   },
   {
@@ -99,7 +99,7 @@ window.DOCTORS = [
     },
     specialties: ["gynae"],
     schedule: [{ days: ["fri"], bn: "সকাল ৯:৩০ – বিকাল ৪টা", en: "9:30 AM – 4 PM" }],
-    poster: "assets/doctor3.jpg",
+    poster: "assets/doctor3.webp",
     face: { x: 74, y: 30 }
   },
   {
@@ -113,7 +113,7 @@ window.DOCTORS = [
     designation: { bn: "রাজশাহী মেডিকেল কলেজ হাসপাতাল", en: "Rajshahi Medical College Hospital" },
     specialties: ["ortho", "surgery"],
     schedule: [{ days: ["tue"], bn: "বিকাল ৩টা – রাত ৯টা", en: "3 PM – 9 PM" }],
-    poster: "assets/doctor4.jpg",
+    poster: "assets/doctor4.webp",
     face: { x: 79, y: 27 }
   },
   {
@@ -130,7 +130,7 @@ window.DOCTORS = [
     },
     specialties: ["pedsurgery", "pediatrics"],
     schedule: [{ days: ["fri"], bn: "সকাল ৯টা – দুপুর ১২টা", en: "9 AM – 12 PM" }],
-    poster: "assets/doctor5.jpg",
+    poster: "assets/doctor5.webp",
     face: { x: 79, y: 33 }
   },
   {
@@ -150,7 +150,7 @@ window.DOCTORS = [
       { daily: true, bn: "বিকাল ৩টা – রাত ৯টা", en: "3 PM – 9 PM" },
       { days: ["fri"], bn: "সকাল ৯টা – রাত ৯টা", en: "9 AM – 9 PM" }
     ],
-    poster: "assets/doctor6.jpg",
+    poster: "assets/doctor6.webp",
     face: { x: 77, y: 35 }
   },
   {
@@ -170,7 +170,7 @@ window.DOCTORS = [
       { days: ["fri"], bn: "সকাল ৯টা – বিকাল ৪টা", en: "9 AM – 4 PM" },
       { days: ["tue"], bn: "বিকাল ৩টা – রাত ৯টা", en: "3 PM – 9 PM" }
     ],
-    poster: "assets/doctor7.jpg",
+    poster: "assets/doctor7.webp",
     face: { x: 25, y: 30 }
   },
   {
@@ -187,7 +187,7 @@ window.DOCTORS = [
     },
     specialties: ["ortho"],
     schedule: [{ days: ["fri"], bn: "সকাল ৯:৩০ থেকে সন্ধ্যা পর্যন্ত", en: "9:30 AM – evening" }],
-    poster: "assets/doctor8.jpg",
+    poster: "assets/doctor8.webp",
     face: { x: 78, y: 31 }
   },
   {
@@ -204,7 +204,7 @@ window.DOCTORS = [
     },
     specialties: ["cardiology", "medicine"],
     schedule: [{ days: ["fri"], bn: "সকাল ৯টা – সন্ধ্যা ৭টা", en: "9 AM – 7 PM" }],
-    poster: "assets/doctor10.jpg",
+    poster: "assets/doctor10.webp",
     face: { x: 76, y: 25 }
   },
   {
@@ -224,7 +224,7 @@ window.DOCTORS = [
       { days: ["fri"], bn: "সকাল ৯টা – রাত ৯টা", en: "9 AM – 9 PM" },
       { days: ["tue"], bn: "বিকাল ৩টা – রাত ৯টা", en: "3 PM – 9 PM" }
     ],
-    poster: "assets/doctor11.jpg",
+    poster: "assets/doctor11.webp",
     face: { x: 77, y: 29 }
   },
   {
@@ -241,7 +241,7 @@ window.DOCTORS = [
     },
     specialties: ["medicine", "surgery"],
     schedule: [{ daily: true, bn: "বহিঃবিভাগ: সকাল ৯টা – রাত ৯টা", en: "Outdoor: 9 AM – 9 PM" }],
-    poster: "assets/doctor12.jpg",
+    poster: "assets/doctor12.webp",
     face: { x: 20, y: 24 }
   },
   {
@@ -258,7 +258,7 @@ window.DOCTORS = [
     },
     specialties: ["surgery"],
     schedule: [{ days: ["thu"], bn: "বিকাল ৩টা থেকে সন্ধ্যা পর্যন্ত", en: "3 PM – evening" }],
-    poster: "assets/doctor13.jpg",
+    poster: "assets/doctor13.webp",
     face: { x: 20, y: 31 }
   }
 ];

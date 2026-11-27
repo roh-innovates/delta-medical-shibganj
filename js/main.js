@@ -136,14 +136,23 @@
     return keys;
   }
 
+  function normalizeDoctorMatchKey(name) {
+    return String(name || "")
+      .trim()
+      .toLowerCase()
+      .replace(/^ডা[.:ঃ]?\s*/, "ডা.")
+      .replace(/^dr\.?\s*/i, "dr.")
+      .replace(/\s+/g, " ");
+  }
+
   function findHardcodedPosterMatch(nameBn, nameEn) {
     var fallback = window.DOCTORS || [];
-    var enLower = String(nameEn || "").trim().toLowerCase();
-    var bnTrim = String(nameBn || "").trim();
+    var enKey = normalizeDoctorMatchKey(nameEn);
+    var bnKey = normalizeDoctorMatchKey(nameBn);
     return fallback.find(function (d) {
       return (
-        (enLower && d.name && d.name.en && d.name.en.toLowerCase() === enLower) ||
-        (bnTrim && d.name && d.name.bn && d.name.bn.trim() === bnTrim)
+        (enKey && d.name && d.name.en && normalizeDoctorMatchKey(d.name.en) === enKey) ||
+        (bnKey && d.name && d.name.bn && normalizeDoctorMatchKey(d.name.bn) === bnKey)
       );
     }) || null;
   }
