@@ -207,7 +207,7 @@
           </p>
 
           <dl class="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div class="stat"><dt data-i18n="hero.stat.doctors">বিশেষজ্ঞ ডাক্তার</dt><dd id="statDoctors">১২+</dd></div>
+            <div class="stat"><dt data-i18n="hero.stat.doctors">বিশেষজ্ঞ ডাক্তার</dt><dd id="statDoctors">১৫+</dd></div>
             <div class="stat"><dt data-i18n="hero.stat.emergency">জরুরি বিভাগ</dt><dd class="text-delta-600" id="statEm">২৪/৭</dd></div>
             <div class="stat"><dt data-i18n="hero.stat.usg">আল্ট্রাসনোগ্রাফি</dt><dd id="statUsg">৪ডি</dd></div>
             <div class="stat"><dt data-i18n="hero.stat.xray">এক্স-রে</dt><dd data-i18n="hero.stat.xrayVal">ডিজিটাল</dd></div>
@@ -432,13 +432,15 @@
 
         <div class="bg-white text-slate-800 rounded-3xl shadow-2xl p-5 sm:p-8 min-w-0">
           <!-- Mode Switcher: Book New Serial vs Check My Serial -->
-          <div class="bg-slate-100 rounded-2xl p-1 grid grid-cols-2 gap-1 mb-6" role="tablist" aria-label="Serial booking or lookup">
+          <div class="bg-slate-100/90 border border-slate-200 rounded-2xl p-1.5 grid grid-cols-2 gap-2 mb-6" role="tablist" aria-label="Serial booking or lookup">
             <button type="button" id="serialTabBook" role="tab" aria-selected="true" aria-controls="serialForm"
-                    class="rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition bg-white text-brand-800 shadow-sm cursor-pointer text-center">
+                    class="rounded-xl px-2.5 sm:px-4 py-3 text-sm sm:text-base font-bold transition-all bg-sky-100 text-brand-900 border-2 border-sky-400 shadow-sm cursor-pointer text-center inline-flex items-center justify-center gap-1.5 leading-snug">
+              <svg class="hidden sm:inline-block icon w-4 h-4 shrink-0"><use href="#i-cal"/></svg>
               <span data-i18n="form.tabBook">নতুন সিরিয়াল বুক</span>
             </button>
             <button type="button" id="serialTabLookup" role="tab" aria-selected="false" aria-controls="serialLookupPanel"
-                    class="rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer text-center">
+                    class="rounded-xl px-2.5 sm:px-4 py-3 text-sm sm:text-base font-semibold transition-all bg-white text-slate-600 border-2 border-slate-200/80 hover:bg-sky-50 hover:text-brand-800 hover:border-sky-200 cursor-pointer text-center inline-flex items-center justify-center gap-1.5 leading-snug">
+              <svg class="hidden sm:inline-block icon w-4 h-4 shrink-0"><use href="#i-search"/></svg>
               <span data-i18n="form.tabLookup">আমার সিরিয়াল চেক</span>
             </button>
           </div>

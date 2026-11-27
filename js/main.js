@@ -104,19 +104,24 @@
     var matchers = [
       { key: "gynae",      re: /গাইনি|গাইনী|প্রসূতি|স্ত্রী|gynae|gyne|obstet/i },
       { key: "pedsurgery", re: /শিশু\s*সার্জারি|pediatric\s*surg/i },
-      { key: "pediatrics", re: /শিশু|নবজাতক|pediatric|child|newborn/i },
+      { key: "pediatrics", re: /শিশু|নবজাতক|pediatric|neonat|child|newborn/i },
       { key: "cardiology", re: /হৃদ|কার্ডিও|cardio|heart/i },
       { key: "neuro",      re: /নিউরো|ব্রেইন|নার্ভ|স্ট্রোক|neuro|brain|spine/i },
       { key: "skin",       re: /চর্ম|যৌন|skin|dermat|vd\b/i },
       { key: "ortho",      re: /অর্থো|হাড়|ট্রমা|ortho|trauma/i },
       { key: "eye",        re: /চক্ষু|eye|ophthal/i },
+      { key: "dental",     re: /দন্ত|দাঁত|মুখ|ডেন্টাল|ডেন্টিস্ট্রি|ওরাল|ম্যাক্সিলো|dental|dentist|oral|maxillo/i },
       { key: "surgery",    re: /সার্জারি|সার্জারী|সার্জন|surgery|surgeon/i },
       { key: "medicine",   re: /মেডিসিন|medicine/i }
     ];
 
     matchers.forEach(function (m) {
       if (m.re.test(combined)) {
-        if (m.key === "surgery" && keys.indexOf("pedsurgery") !== -1 && !/জেনারেল|general/i.test(combined)) {
+        if (
+          m.key === "surgery" &&
+          (keys.indexOf("pedsurgery") !== -1 || keys.indexOf("dental") !== -1) &&
+          !/জেনারেল|general/i.test(combined)
+        ) {
           return;
         }
         keys.push(m.key);
@@ -137,10 +142,13 @@
   }
 
   function normalizeDoctorMatchKey(name) {
-    return String(name || "")
+    var str = String(name || "");
+    if (typeof str.normalize === "function") str = str.normalize("NFC");
+    return str
       .trim()
       .toLowerCase()
       .replace(/^ডা[.:ঃ]?\s*/, "ডা.")
+      .replace(/মো[.:ঃ]\s*/g, "মোঃ ")
       .replace(/^dr\.?\s*/i, "dr.")
       .replace(/\s+/g, " ");
   }
@@ -900,8 +908,8 @@
     var bookForm = $("serialForm");
     var lookupPanel = $("serialLookupPanel");
 
-    var activeCls = "rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition bg-white text-brand-800 shadow-sm cursor-pointer text-center";
-    var idleCls = "rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer text-center";
+    var activeCls = "rounded-xl px-2.5 sm:px-4 py-3 text-sm sm:text-base font-bold transition-all bg-sky-100 text-brand-900 border-2 border-sky-400 shadow-sm cursor-pointer text-center inline-flex items-center justify-center gap-1.5 leading-snug";
+    var idleCls = "rounded-xl px-2.5 sm:px-4 py-3 text-sm sm:text-base font-semibold transition-all bg-white text-slate-600 border-2 border-slate-200/80 hover:bg-sky-50 hover:text-brand-800 hover:border-sky-200 cursor-pointer text-center inline-flex items-center justify-center gap-1.5 leading-snug";
 
     if (bookTab) {
       bookTab.setAttribute("aria-selected", isBook ? "true" : "false");

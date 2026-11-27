@@ -198,8 +198,73 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* Auto-paging transitions, progress bar & dot indicators */
+    .tv-page-enter {
+      animation: tvPageFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    @keyframes tvPageFadeIn {
+      from { opacity: 0.25; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .tv-progress-track {
+      background: var(--tv-border);
+      overflow: hidden;
+    }
+
+    .tv-progress-bar {
+      background: linear-gradient(90deg, #10b981, #34d399);
+      width: 0%;
+      height: 100%;
+    }
+
+    .tv-progress-bar.is-running {
+      animation: tvProgressFill var(--tv-page-ms, 10000ms) linear forwards;
+    }
+
+    @keyframes tvProgressFill {
+      from { width: 0%; }
+      to { width: 100%; }
+    }
+
+    .tv-page-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 9999px;
+      background: var(--tv-border);
+      transition: width 0.25s ease, background-color 0.25s ease;
+      cursor: pointer;
+    }
+
+    .tv-page-dot.is-active {
+      width: 24px;
+      background: var(--tv-accent);
+    }
+
+    /* Guarantee zero vertical overflow on landscape TV screens when chambers are live */
+    @media (min-width: 1024px) and (min-height: 600px) {
+      body.tv-live-screen {
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+      }
+      body.tv-live-screen main {
+        min-height: 0;
+        overflow: hidden;
+      }
+      body.tv-live-screen #tvRunningSection {
+        min-height: 0;
+      }
+      body.tv-live-screen #tvRunningGrid.tv-grid-two-rows {
+        flex: 1 1 0%;
+        min-height: 0;
+        grid-template-rows: repeat(2, minmax(0, 1fr));
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
-      .tv-spotlight, .tv-card-flash, .tv-sl-pop { animation: none; }
+      .tv-spotlight, .tv-card-flash, .tv-sl-pop, .tv-page-enter, .tv-progress-bar.is-running { animation: none; }
     }
   </style>
 </head>
@@ -270,18 +335,18 @@
   </div>
 
   <!-- ============ NOW CALLING SPOTLIGHT BANNER (Pops on +1 Next) ============ -->
-  <div id="tvSpotlightWrap" class="hidden px-4 sm:px-6 lg:px-8 pt-4 shrink-0">
-    <div class="mx-auto max-w-[1800px] tv-spotlight rounded-2xl sm:rounded-3xl px-5 sm:px-8 py-4 sm:py-5 text-white shadow-2xl border border-emerald-300/40 flex flex-wrap items-center justify-between gap-4">
-      <div class="flex items-center gap-3.5 sm:gap-5 min-w-0">
-        <span class="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/15 border border-white/25 grid place-items-center text-2xl sm:text-3xl shrink-0" aria-hidden="true">🔔</span>
+  <div id="tvSpotlightWrap" class="hidden px-4 sm:px-6 lg:px-8 pt-3 shrink-0">
+    <div class="mx-auto max-w-[1800px] tv-spotlight rounded-2xl sm:rounded-3xl px-4 sm:px-7 py-3 sm:py-3.5 text-white shadow-2xl border border-emerald-300/40 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3 sm:gap-4 min-w-0">
+        <span class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white/15 border border-white/25 grid place-items-center text-xl sm:text-2xl shrink-0" aria-hidden="true">🔔</span>
         <div class="min-w-0">
-          <p class="text-xs sm:text-sm font-bold uppercase tracking-widest text-emerald-200">এখন ডাকছেন · NOW CALLING</p>
-          <p id="tvSpotlightDoctor" class="text-xl sm:text-2xl lg:text-3xl font-extrabold leading-tight truncate mt-0.5">—</p>
-          <p id="tvSpotlightMeta" class="text-xs sm:text-base text-emerald-100/90 font-semibold mt-0.5 truncate">—</p>
+          <p class="text-[11px] sm:text-xs font-bold uppercase tracking-widest text-emerald-200">এখন ডাকছেন · NOW CALLING</p>
+          <p id="tvSpotlightDoctor" class="text-lg sm:text-2xl lg:text-3xl font-extrabold leading-tight truncate mt-0.5">—</p>
+          <p id="tvSpotlightMeta" class="text-xs sm:text-sm text-emerald-100/90 font-semibold mt-0.5 truncate">—</p>
         </div>
       </div>
       <div class="flex items-center gap-3 shrink-0 ml-auto">
-        <span id="tvSpotlightSerial" class="font-num font-black text-4xl sm:text-5xl lg:text-6xl bg-white text-emerald-900 rounded-2xl px-5 sm:px-7 py-2 sm:py-2.5 shadow-lg tracking-tight tabular-nums">
+        <span id="tvSpotlightSerial" class="font-num font-black text-3xl sm:text-5xl lg:text-5xl bg-white text-emerald-900 rounded-2xl px-4 sm:px-6 py-1.5 sm:py-2 shadow-lg tracking-tight tabular-nums">
           SL-01
         </span>
       </div>
@@ -289,7 +354,7 @@
   </div>
 
   <!-- ============ MAIN LIVE BOARD ============ -->
-  <main class="flex-1 px-4 sm:px-6 lg:px-8 py-5 sm:py-6 flex flex-col gap-6 mx-auto w-full max-w-[1800px]">
+  <main class="flex-1 px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 lg:py-5 flex flex-col gap-4 lg:gap-5 mx-auto w-full max-w-[1800px]">
     <!-- Loading State -->
     <div id="tvLoading" class="flex-1 flex flex-col items-center justify-center gap-4 py-16 text-center">
       <div class="w-12 h-12 rounded-full border-4 border-emerald-400/25 border-t-emerald-400 animate-spin"></div>
@@ -297,13 +362,13 @@
     </div>
 
     <!-- Error State -->
-    <div id="tvError" class="hidden rounded-2xl border border-rose-400/40 bg-rose-500/15 px-5 py-4 text-center">
+    <div id="tvError" class="hidden rounded-2xl border border-rose-400/40 bg-rose-500/15 px-5 py-4 text-center shrink-0">
       <p id="tvErrorMsg" class="text-sm sm:text-base font-bold tv-err-text">ডাটাবেজের সাথে সংযোগ করা যায়নি — স্বয়ংক্রিয়ভাবে পুনরায় চেষ্টা করা হচ্ছে…</p>
     </div>
 
     <!-- Active Running Chambers Grid -->
-    <section id="tvRunningSection" class="hidden flex-1 flex flex-col justify-center" aria-label="বর্তমান চলমান চেম্বার">
-      <div class="flex items-center justify-between gap-2 mb-3.5">
+    <section id="tvRunningSection" class="hidden flex-1 flex flex-col min-h-0" aria-label="বর্তমান চলমান চেম্বার">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5 shrink-0">
         <h2 class="flex items-center gap-2.5 text-sm sm:text-base lg:text-lg font-bold tracking-wide uppercase tv-accent-text">
           <span class="relative flex h-3 w-3 shrink-0" aria-hidden="true">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -311,10 +376,38 @@
           </span>
           <span>বর্তমান সিরিয়াল চলছে (Now Serving)</span>
         </h2>
-        <span id="tvSyncStamp" class="tv-muted text-xs font-semibold"></span>
+
+        <div class="flex items-center gap-2.5 sm:gap-3 ml-auto">
+          <!-- Auto-Page Controls (Shown automatically when active chambers span > 1 page) -->
+          <div id="tvPagerControls" class="hidden inline-flex items-center gap-1.5 sm:gap-2">
+            <button type="button" id="tvPrevPageBtn" title="Previous page (←)" aria-label="Previous page"
+                    class="tv-ctrl-btn inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-sm font-bold hover:opacity-90 transition cursor-pointer">
+              ‹
+            </button>
+            <span id="tvPageBadge" class="tv-accent-pill rounded-full px-2.5 sm:px-3 py-1 text-xs sm:text-sm font-extrabold whitespace-nowrap tabular-nums">
+              পৃষ্ঠা ১ / ২
+            </span>
+            <div id="tvPageDots" class="hidden sm:inline-flex items-center gap-1.5 px-1" aria-label="Page indicators"></div>
+            <button type="button" id="tvPausePageBtn" title="Pause / Resume auto-paging (Space)" aria-label="Pause auto-paging"
+                    class="tv-ctrl-btn inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold hover:opacity-90 transition cursor-pointer">
+              ⏸
+            </button>
+            <button type="button" id="tvNextPageBtn" title="Next page (→)" aria-label="Next page"
+                    class="tv-ctrl-btn inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-sm font-bold hover:opacity-90 transition cursor-pointer">
+              ›
+            </button>
+          </div>
+
+          <span id="tvSyncStamp" class="hidden md:inline tv-muted text-xs font-semibold whitespace-nowrap"></span>
+        </div>
       </div>
 
-      <div id="tvRunningGrid" class="grid gap-4 sm:gap-5 lg:gap-6"></div>
+      <!-- Auto-Page Progress Bar -->
+      <div id="tvPageProgressWrap" class="hidden tv-progress-track h-1 rounded-full mb-3 shrink-0" aria-hidden="true">
+        <div id="tvPageProgressBar" class="tv-progress-bar rounded-full"></div>
+      </div>
+
+      <div id="tvRunningGrid" class="grid gap-3.5 sm:gap-4 lg:gap-5"></div>
     </section>
 
     <!-- Waiting / Standby Banner when 0 Chambers Live -->

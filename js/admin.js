@@ -1895,7 +1895,7 @@
       .finally(function () {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = "Import 12 Existing Clinic Doctors";
+          btn.textContent = "Import " + window.DOCTORS.length + " Existing Clinic Doctors";
         }
       });
   }

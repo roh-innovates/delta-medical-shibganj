@@ -2,7 +2,7 @@
  * Doctor Chamber Directory: DATA FILE
  * ---------------------------------------------------------------------
  * Source: the hospital's own doctor posters in ./assets/
- *   (doctor.webp, doctor2–8.webp, doctor10–13.webp). Nothing here is invented.
+ *   (doctor.webp, doctor2–8.webp, doctor10–13.webp, drMahfuzRaihan.webp, drToukirPriyo.webp, drSufianAra.webp). Nothing here is invented.
  *   Please re-check schedules against the reception's latest list.
  *
  * The directory cards, specialty/day filters and the serial-form
@@ -47,6 +47,7 @@ window.SPECIALTIES = {
   skin:       { bn: "চর্ম ও যৌন রোগ",       en: "Skin & VD" },
   ortho:      { bn: "অর্থোপেডিক্স (হাড়-জোড়া)", en: "Orthopedics & Trauma" },
   eye:        { bn: "চক্ষু রোগ",            en: "Eye (Ophthalmology)" },
+  dental:     { bn: "মুখ ও দন্ত রোগ",       en: "Dental & Oral Surgery" },
   surgery:    { bn: "জেনারেল সার্জারি",      en: "General Surgery" }
 };
 
@@ -156,19 +157,18 @@ window.DOCTORS = [
   {
     id: "imran-javed",
     name: { bn: "ডা. মোঃ ইমরান জাভেদ", en: "Dr. Md. Imran Javed" },
-    focus: { bn: "চক্ষু বিশেষজ্ঞ ও সার্জন", en: "Eye Specialist & Surgeon" },
+    focus: { bn: "চক্ষু বিশেষজ্ঞ · কনসালটেন্ট চিকিৎসক ও সার্জন", en: "Eye Specialist · Consultant Physician & Surgeon" },
     degrees: {
-      bn: "এমবিবিএস (ঢাকা), ডিও (চক্ষু), সিসিডি (বারডেম)",
-      en: "MBBS (Dhaka), DO (Eye), CCD (BIRDEM)"
+      bn: "এমবিবিএস (ঢাকা), ডিও (চক্ষু) পিজি হাসপাতাল, সিসিডি (বারডেম)",
+      en: "MBBS (Dhaka), DO (Eye) PG Hospital, CCD (BIRDEM)"
     },
     designation: {
-      bn: "বাংলাদেশ মেডিকেল বিশ্ববিদ্যালয় · ট্রেইন্ড ইন অ্যাডভান্সড ক্যাটারাক্ট সার্জারী (শেভরণ) · কনসালটেন্ট, বাংলাদেশ আই হসপিটাল রাজশাহী লিঃ",
-      en: "Bangladesh Medical University · Trained in Advanced Cataract Surgery (Chevron) · Consultant, Bangladesh Eye Hospital Rajshahi Ltd."
+      bn: "কনসালটেন্ট চিকিৎসক ও সার্জন · বিএনএসবি, চাঁপাইনবাবগঞ্জ চক্ষু হাসপাতাল",
+      en: "Consultant Physician & Surgeon · BNSB, Chapainawabganj Eye Hospital"
     },
     specialties: ["eye"],
     schedule: [
-      { days: ["fri"], bn: "সকাল ৯টা – বিকাল ৪টা", en: "9 AM – 4 PM" },
-      { days: ["tue"], bn: "বিকাল ৩টা – রাত ৯টা", en: "3 PM – 9 PM" }
+      { days: ["fri"], bn: "সকাল ১০টা থেকে সন্ধ্যা পর্যন্ত", en: "10:00 AM – evening" }
     ],
     poster: "assets/doctor7.webp",
     face: { x: 25, y: 30 }
@@ -260,5 +260,62 @@ window.DOCTORS = [
     schedule: [{ days: ["thu"], bn: "বিকাল ৩টা থেকে সন্ধ্যা পর্যন্ত", en: "3 PM – evening" }],
     poster: "assets/doctor13.webp",
     face: { x: 20, y: 31 }
+  },
+  {
+    id: "mahfuz-raihan",
+    name: { bn: "ডা. মো: মাহফুজ রায়হান", en: "Dr. Md. Mahfuz Raihan" },
+    focus: { bn: "নবজাতক ও শিশুরোগ বিশেষজ্ঞ", en: "Neonatal & Pediatric Specialist" },
+    degrees: {
+      bn: "এমবিবিএস, বিসিএস (স্বাস্থ্য), ডিসিএইচ (শিশু হাসপাতাল, মিরপুর), এফসিপিএস (শেষ পর্ব)",
+      en: "MBBS, BCS (Health), DCH (Shishu Hospital, Mirpur), FCPS (Final Part)"
+    },
+    designation: {
+      bn: "কনসালটেন্ট (শিশু ও নবজাতক), ২৫০ শয্যা বিশিষ্ট জেলা হাসপাতাল, চাঁপাইনবাবগঞ্জ",
+      en: "Consultant (Pediatrics & Neonatology), 250 Bedded District Hospital, Chapainawabganj"
+    },
+    specialties: ["pediatrics"],
+    schedule: [
+      { days: ["fri"], bn: "১০:০০টা থেকে সন্ধ্যা পর্যন্ত", en: "10:00 AM – evening" },
+      { days: ["tue"], bn: "দুপুর ৩:০০ টা থেকে রাত ৮:০০ টা", en: "3:00 PM – 8:00 PM" }
+    ],
+    poster: "assets/drMahfuzRaihan.webp",
+    face: { x: 78, y: 24 }
+  },
+  {
+    id: "toukir-hasan-priyo",
+    name: { bn: "ডা. মোঃ তৌকির হাসান প্রিয়", en: "Dr. Md. Toukir Hasan Priyo" },
+    focus: { bn: "মুখ ও দন্ত বিশেষজ্ঞ ও সার্জন", en: "Oral & Dental Specialist & Surgeon" },
+    degrees: {
+      bn: "বিডিএস (আর ইউ), পিজিটি (ওরাল এন্ড ম্যাক্সিলোফেসিয়াল সার্জারি)",
+      en: "BDS (RU), PGT (Oral & Maxillofacial Surgery)"
+    },
+    designation: {
+      bn: "রাজশাহী মেডিকেল কলেজ হাসপাতাল · বিশেষ প্রশিক্ষণপ্রাপ্ত রুট ক্যানেল এবং কসমেটিক ডেন্টিস্ট্রি",
+      en: "Rajshahi Medical College Hospital · Specially Trained in Root Canal & Cosmetic Dentistry"
+    },
+    specialties: ["dental"],
+    schedule: [
+      { days: ["fri"], bn: "সকাল ৯টা থেকে সন্ধ্যা পর্যন্ত", en: "9 AM – evening" },
+      { days: ["tue"], bn: "সকাল ৯টা – বিকাল ৫টা", en: "9 AM – 5 PM" }
+    ],
+    poster: "assets/drToukirPriyo.webp",
+    face: { x: 50, y: 42 }
+  },
+  {
+    id: "sufian-ara",
+    name: { bn: "ডা. সুফিয়ান আরা", en: "Dr. Sufian Ara" },
+    focus: { bn: "চক্ষু চিকিৎসক", en: "Eye Physician" },
+    degrees: {
+      bn: "এমবিবিএস, সিসিডি (বারডেম), সিসিজিপি (চক্ষু)",
+      en: "MBBS, CCD (BIRDEM), CCGP (Eye)"
+    },
+    designation: {
+      bn: "চক্ষু রোগে বিশেষ প্রশিক্ষণপ্রাপ্ত · মেডিকেল অফিসার, চক্ষু ইউনিট, ডেলটা মেডিকেল সেন্টার",
+      en: "Specially Trained in Eye Care · Medical Officer, Eye Unit, Delta Medical Center"
+    },
+    specialties: ["eye"],
+    schedule: [{ daily: true, bn: "সকাল ১০টা – দুপুর ২টা", en: "10 AM – 2 PM" }],
+    poster: "assets/drSufianAra.webp",
+    face: { x: 50, y: 40 }
   }
 ];

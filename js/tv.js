@@ -10,6 +10,8 @@
 
   var THEME_KEY = "dmc-tv-theme";
   var SOUND_KEY = "dmc-tv-sound";
+  var PAGE_DURATION_MS = 10000;
+  var CALLOUT_HOLD_MS = 12000;
 
   var doctors = [];
   var lastKnownSerials = {};
@@ -20,6 +22,13 @@
   var realtimeDebounce = null;
   var wakeLockSentinel = null;
   var lastRenderedDate = "";
+
+  // Auto-paging state
+  var currentPage = 0;
+  var totalPages = 1;
+  var isPagingPaused = false;
+  var pageTimer = null;
+  var resizeDebounce = null;
 
   // Sound state
   var soundEnabled = true;
@@ -261,59 +270,162 @@
     }, 8500);
   }
 
-  /* ------------ Adaptive TV Grid Sizing & Board Renderer ------------ */
-  function getRunningGridSpec(count) {
-    if (count === 1) {
+  /* ------------ Auto-Paging & Viewport-Aware TV Grid ------------ */
+  function getCardsPerPage() {
+    var w = window.innerWidth || 1280;
+    var h = window.innerHeight || 720;
+    if (w < 1024) return 4;
+    // 1080p+ wide TVs: 4 columns x 2 rows = 8 large readable cards/page
+    if (w >= 1440 && h >= 840) return 8;
+    // 720p / 768p / scaled 1080p TVs: 3 columns x 2 rows = 6 cards/page
+    return 6;
+  }
+
+  function stopPageTimer() {
+    if (pageTimer) {
+      clearTimeout(pageTimer);
+      pageTimer = null;
+    }
+    var bar = $("tvPageProgressBar");
+    if (bar) {
+      bar.classList.remove("is-running");
+      bar.style.width = "0%";
+    }
+  }
+
+  function startPageTimer(durationMs) {
+    stopPageTimer();
+    if (totalPages <= 1 || isPagingPaused) return;
+    var ms = durationMs || PAGE_DURATION_MS;
+    var bar = $("tvPageProgressBar");
+    if (bar) {
+      bar.style.setProperty("--tv-page-ms", ms + "ms");
+      void bar.offsetWidth;
+      bar.classList.add("is-running");
+    }
+    pageTimer = setTimeout(function () {
+      pageTimer = null;
+      if (totalPages <= 1 || isPagingPaused) return;
+      goToPage((currentPage + 1) % totalPages, true, PAGE_DURATION_MS);
+    }, ms);
+  }
+
+  function updatePagerControlsUI() {
+    var controls = $("tvPagerControls");
+    var badge = $("tvPageBadge");
+    var dots = $("tvPageDots");
+    var pauseBtn = $("tvPausePageBtn");
+    var progWrap = $("tvPageProgressWrap");
+    var showPager = totalPages > 1;
+
+    if (controls) controls.classList.toggle("hidden", !showPager);
+    if (progWrap) progWrap.classList.toggle("hidden", !showPager);
+    if (!showPager) return;
+
+    if (badge) {
+      badge.textContent =
+        "পৃষ্ঠা " + toBanglaDigits(currentPage + 1) + " / " + toBanglaDigits(totalPages);
+    }
+    if (pauseBtn) {
+      pauseBtn.textContent = isPagingPaused ? "▶" : "⏸";
+      pauseBtn.setAttribute("aria-label", isPagingPaused ? "Resume auto-paging" : "Pause auto-paging");
+      pauseBtn.title = isPagingPaused ? "Resume auto-paging (Space)" : "Pause auto-paging (Space)";
+    }
+    if (dots) {
+      var html = "";
+      for (var i = 0; i < totalPages; i++) {
+        var active = i === currentPage;
+        html +=
+          '<button type="button" data-tv-page="' + i + '" aria-label="Page ' + (i + 1) + '" ' +
+          'class="tv-page-dot' + (active ? " is-active" : "") + '"></button>';
+      }
+      dots.innerHTML = html;
+    }
+  }
+
+  function goToPage(pageIdx, animate, durationMs) {
+    if (totalPages <= 1) {
+      currentPage = 0;
+      stopPageTimer();
+      return;
+    }
+    currentPage = ((pageIdx % totalPages) + totalPages) % totalPages;
+    renderBoard({ animatePage: !!animate, skipAutoTimerStart: true });
+    startPageTimer(durationMs || PAGE_DURATION_MS);
+  }
+
+  function togglePagingPause() {
+    if (totalPages <= 1) return;
+    isPagingPaused = !isPagingPaused;
+    updatePagerControlsUI();
+    if (isPagingPaused) stopPageTimer();
+    else startPageTimer(PAGE_DURATION_MS);
+  }
+
+  function getRunningGridSpec(pageCount, cardsPerPage, isMultiPage) {
+    var slotCount = isMultiPage ? cardsPerPage : pageCount;
+    var isCompactHeight = (window.innerHeight || 720) < 820;
+
+    if (slotCount === 1) {
       return {
         gridClass: "grid gap-6 grid-cols-1 max-w-4xl mx-auto w-full",
         cardPad: "p-7 sm:p-10",
         nameCls: "text-2xl sm:text-4xl lg:text-5xl",
         specCls: "text-base sm:text-xl",
         slCls: "text-7xl sm:text-8xl lg:text-9xl",
-        slPad: "px-8 py-6 sm:py-8"
+        slPad: "px-8 py-6 sm:py-8",
+        showEn: true
       };
     }
-    if (count === 2) {
+    if (slotCount === 2) {
       return {
         gridClass: "grid gap-5 sm:gap-6 grid-cols-1 md:grid-cols-2",
         cardPad: "p-6 sm:p-8",
         nameCls: "text-2xl sm:text-3xl lg:text-4xl",
         specCls: "text-sm sm:text-lg",
         slCls: "text-6xl sm:text-7xl xl:text-8xl",
-        slPad: "px-6 py-5 sm:py-6"
+        slPad: "px-6 py-5 sm:py-6",
+        showEn: true
       };
     }
-    if (count <= 4) {
+    if (slotCount <= 4) {
+      var twoRows4 = pageCount > 2;
       return {
-        gridClass: "grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2",
-        cardPad: "p-5 sm:p-7",
-        nameCls: "text-xl sm:text-2xl lg:text-3xl",
-        specCls: "text-sm sm:text-base",
-        slCls: "text-5xl sm:text-6xl xl:text-7xl",
-        slPad: "px-5 py-4 sm:py-5"
+        gridClass: "grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2" + (twoRows4 ? " tv-grid-two-rows" : ""),
+        cardPad: isCompactHeight && twoRows4 ? "p-4 sm:p-5" : "p-5 sm:p-7",
+        nameCls: isCompactHeight && twoRows4 ? "text-xl sm:text-2xl" : "text-xl sm:text-2xl lg:text-3xl",
+        specCls: "text-xs sm:text-base",
+        slCls: isCompactHeight && twoRows4 ? "text-4xl sm:text-5xl lg:text-6xl" : "text-5xl sm:text-6xl xl:text-7xl",
+        slPad: isCompactHeight && twoRows4 ? "px-4 py-3" : "px-5 py-4 sm:py-5",
+        showEn: !(isCompactHeight && twoRows4)
       };
     }
-    if (count <= 6) {
+    if (slotCount <= 6) {
+      var twoRows6 = pageCount > 3;
       return {
-        gridClass: "grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3",
-        cardPad: "p-5 sm:p-6",
-        nameCls: "text-xl sm:text-2xl",
+        gridClass: "grid gap-3.5 sm:gap-4 lg:gap-5 grid-cols-1 md:grid-cols-2 lg:grid-cols-3" + (twoRows6 ? " tv-grid-two-rows" : ""),
+        cardPad: isCompactHeight ? "p-3.5 sm:p-4" : "p-4 sm:p-5 lg:p-6",
+        nameCls: isCompactHeight ? "text-lg sm:text-xl" : "text-xl sm:text-2xl",
         specCls: "text-xs sm:text-sm",
-        slCls: "text-5xl xl:text-6xl",
-        slPad: "px-4 py-4"
+        slCls: isCompactHeight ? "text-4xl lg:text-5xl" : "text-5xl xl:text-6xl",
+        slPad: isCompactHeight ? "px-3.5 py-2.5" : "px-4 py-3.5 sm:py-4",
+        showEn: !isCompactHeight
       };
     }
+    var twoRows8 = pageCount > 4;
     return {
-      gridClass: "grid gap-3.5 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4",
-      cardPad: "p-4 sm:p-5",
-      nameCls: "text-lg sm:text-xl",
+      gridClass: "grid gap-3.5 sm:gap-4 lg:gap-5 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" + (twoRows8 ? " tv-grid-two-rows" : ""),
+      cardPad: isCompactHeight ? "p-3.5 sm:p-4" : "p-4 sm:p-5",
+      nameCls: isCompactHeight ? "text-lg sm:text-xl" : "text-xl 2xl:text-2xl",
       specCls: "text-xs sm:text-sm",
-      slCls: "text-4xl xl:text-5xl",
-      slPad: "px-4 py-3.5"
+      slCls: isCompactHeight ? "text-4xl xl:text-5xl" : "text-5xl 2xl:text-6xl",
+      slPad: isCompactHeight ? "px-3.5 py-2.5" : "px-4 py-3.5",
+      showEn: !isCompactHeight
     };
   }
 
-  function renderBoard() {
+  function renderBoard(opts) {
+    var options = opts || {};
     var today = todayLocalIso();
     lastRenderedDate = today;
 
@@ -348,39 +460,54 @@
         new Date().toLocaleTimeString("bn-BD", { hour: "numeric", minute: "2-digit", second: "2-digit" });
     }
 
-    // 1. Running Chambers
+    // Lock landscape TV viewport to 100vh whenever active chambers are showing
+    document.body.classList.toggle("tv-live-screen", runningDocs.length > 0);
+
+    // 1. Running Chambers (Auto-Paged so every active chamber stays large & visible)
     if (runningDocs.length > 0) {
       if (idleHero) idleHero.classList.add("hidden");
       if (runningSection) runningSection.classList.remove("hidden");
 
-      var spec = getRunningGridSpec(runningDocs.length);
+      var cardsPerPage = getCardsPerPage();
+      totalPages = Math.max(1, Math.ceil(runningDocs.length / cardsPerPage));
+      if (currentPage >= totalPages) currentPage = 0;
+
+      var startIdx = currentPage * cardsPerPage;
+      var pageDocs = runningDocs.slice(startIdx, startIdx + cardsPerPage);
+      var spec = getRunningGridSpec(pageDocs.length, cardsPerPage, totalPages > 1);
+
       if (runningGrid) {
-        runningGrid.className = spec.gridClass;
-        runningGrid.innerHTML = runningDocs.map(function (doc) {
+        if (options.animatePage) {
+          runningGrid.classList.remove("tv-page-enter");
+          void runningGrid.offsetWidth;
+        }
+        var centerSingleRow = spec.gridClass.indexOf("tv-grid-two-rows") === -1 ? " my-auto" : "";
+        runningGrid.className = spec.gridClass + centerSingleRow + (options.animatePage ? " tv-page-enter" : "");
+        runningGrid.innerHTML = pageDocs.map(function (doc) {
           var idStr = String(doc.id);
           var isFlashing = !!recentlyFlashedIds[idStr];
           var slCode = formatSerialCode(doc.current_serial);
           var nameBn = doc.name_bn || doc.name_en || "—";
-          var nameEn = doc.name_en && doc.name_en !== doc.name_bn ? doc.name_en : "";
+          var nameEn = spec.showEn && doc.name_en && doc.name_en !== doc.name_bn ? doc.name_en : "";
           var specialty = doc.specialty_bn || doc.specialty_en || "";
           var roomNo = String(doc.room_no || "").trim();
 
           return (
             '<article class="tv-card rounded-2xl sm:rounded-3xl ' + spec.cardPad +
-              (isFlashing ? " tv-card-flash" : "") + ' flex flex-col justify-between gap-4 min-w-0">' +
-              '<div class="flex items-center justify-between gap-2 flex-wrap">' +
-                '<span class="tv-accent-pill inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs sm:text-sm font-extrabold">' +
+              (isFlashing ? " tv-card-flash" : "") + ' flex flex-col justify-between gap-2.5 sm:gap-3 min-w-0 min-h-0 overflow-hidden">' +
+              '<div class="flex items-center justify-between gap-2 flex-wrap shrink-0">' +
+                '<span class="tv-accent-pill inline-flex items-center gap-1.5 sm:gap-2 rounded-full px-2.5 sm:px-3 py-0.5 sm:py-1 text-[11px] sm:text-xs font-extrabold">' +
                   '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>' +
                   "<span>চলমান সিরিয়াল</span>" +
                 "</span>" +
                 (roomNo
-                  ? '<span class="tv-room-badge inline-flex items-center rounded-xl px-3 py-1 text-xs sm:text-sm lg:text-base font-extrabold whitespace-nowrap">' +
+                  ? '<span class="tv-room-badge inline-flex items-center rounded-xl px-2.5 sm:px-3 py-0.5 sm:py-1 text-xs sm:text-sm font-extrabold whitespace-nowrap">' +
                       "কক্ষ নং: " + escapeHtml(roomNo) +
                     "</span>"
                   : "") +
               "</div>" +
 
-              '<div class="min-w-0">' +
+              '<div class="min-w-0 my-auto">' +
                 '<h3 class="font-bold leading-snug ' + spec.nameCls + ' break-words">' +
                   escapeHtml(nameBn) +
                 "</h3>" +
@@ -388,14 +515,14 @@
                   ? '<p class="tv-muted font-num text-xs sm:text-sm font-semibold mt-0.5 truncate">' + escapeHtml(nameEn) + "</p>"
                   : "") +
                 (specialty
-                  ? '<p class="tv-muted font-semibold mt-1 ' + spec.specCls + ' truncate">' + escapeHtml(specialty) + "</p>"
+                  ? '<p class="tv-muted font-semibold mt-0.5 sm:mt-1 ' + spec.specCls + ' truncate">' + escapeHtml(specialty) + "</p>"
                   : "") +
               "</div>" +
 
-              '<div class="tv-sl-box rounded-2xl ' + spec.slPad + ' flex items-center justify-between gap-3">' +
+              '<div class="tv-sl-box rounded-2xl ' + spec.slPad + ' flex items-center justify-between gap-3 shrink-0">' +
                 '<div class="leading-tight">' +
-                  '<p class="text-[11px] sm:text-xs font-bold uppercase tracking-widest text-emerald-200/90">NOW SERVING</p>' +
-                  '<p class="text-xs sm:text-sm font-semibold text-emerald-100 mt-0.5">বর্তমান সিরিয়াল</p>' +
+                  '<p class="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-emerald-200/90">NOW SERVING</p>' +
+                  '<p class="text-[11px] sm:text-sm font-semibold text-emerald-100 mt-0.5">বর্তমান সিরিয়াল</p>' +
                 "</div>" +
                 '<p class="font-num font-black tracking-tight leading-none ' + spec.slCls + (isFlashing ? " tv-sl-pop" : "") + '">' +
                   escapeHtml(slCode) +
@@ -405,13 +532,29 @@
           );
         }).join("");
       }
+
+      updatePagerControlsUI();
+      if (totalPages <= 1) {
+        stopPageTimer();
+      } else if (!pageTimer && !isPagingPaused && !options.skipAutoTimerStart) {
+        startPageTimer(PAGE_DURATION_MS);
+      }
     } else {
+      totalPages = 1;
+      currentPage = 0;
+      stopPageTimer();
+      updatePagerControlsUI();
       if (runningSection) runningSection.classList.add("hidden");
       if (idleHero) idleHero.classList.remove("hidden");
     }
 
-    // 2. Standby Chambers (Compact below running cards, or full list when idle)
-    if (standbyDocs.length > 0 && standbySection && standbyGrid) {
+    // 2. Standby Chambers (Full list when idle; hidden when live chambers need the full TV viewport)
+    var showStandby =
+      standbyDocs.length > 0 &&
+      (runningDocs.length === 0 ||
+        (totalPages === 1 && runningDocs.length <= 2 && (window.innerHeight || 720) >= 880));
+
+    if (showStandby && standbySection && standbyGrid) {
       standbySection.classList.remove("hidden");
       if (standbyHeading) {
         standbyHeading.textContent = runningDocs.length > 0
@@ -492,12 +635,34 @@
     lastKnownSerials = nextKnown;
     isInitialLoad = false;
 
-    renderBoard();
-
     if (newlyAdvancedDoc && newlyAdvancedSerial > 0) {
+      // Jump straight to the page containing the newly advanced doctor & hold briefly
+      var runningList = rows.filter(function (doc) { return isRunningToday(doc, today); });
+      var advIdx = runningList.findIndex(function (doc) {
+        return String(doc.id) === String(newlyAdvancedDoc.id);
+      });
+      var perPage = getCardsPerPage();
+      var nextTotal = Math.max(1, Math.ceil(runningList.length / perPage));
+      var jumped = false;
+
+      if (advIdx !== -1) {
+        var targetPage = Math.floor(advIdx / perPage);
+        jumped = targetPage !== currentPage;
+        currentPage = targetPage;
+      } else if (currentPage >= nextTotal) {
+        currentPage = 0;
+      }
+
+      renderBoard({ animatePage: jumped, skipAutoTimerStart: true });
       playHospitalChime();
       showSpotlight(newlyAdvancedDoc, newlyAdvancedSerial);
+      if (totalPages > 1 && !isPagingPaused) {
+        startPageTimer(CALLOUT_HOLD_MS);
+      }
+      return;
     }
+
+    renderBoard();
   }
 
   function fetchActiveDoctors() {
@@ -616,12 +781,67 @@
 
     var fsBtn = $("tvFullscreenBtn");
     if (fsBtn) fsBtn.addEventListener("click", toggleFullscreen);
-    document.addEventListener("fullscreenchange", updateFullscreenIcon);
+    document.addEventListener("fullscreenchange", function () {
+      updateFullscreenIcon();
+      renderBoard();
+    });
+
+    // Auto-paging manual controls & TV remote / keyboard shortcuts
+    var prevPageBtn = $("tvPrevPageBtn");
+    if (prevPageBtn) {
+      prevPageBtn.addEventListener("click", function () {
+        goToPage(currentPage - 1, true, PAGE_DURATION_MS);
+      });
+    }
+    var nextPageBtn = $("tvNextPageBtn");
+    if (nextPageBtn) {
+      nextPageBtn.addEventListener("click", function () {
+        goToPage(currentPage + 1, true, PAGE_DURATION_MS);
+      });
+    }
+    var pausePageBtn = $("tvPausePageBtn");
+    if (pausePageBtn) {
+      pausePageBtn.addEventListener("click", togglePagingPause);
+    }
+    var pageDots = $("tvPageDots");
+    if (pageDots) {
+      pageDots.addEventListener("click", function (e) {
+        var dot = e.target.closest("[data-tv-page]");
+        if (!dot) return;
+        var idx = parseInt(dot.getAttribute("data-tv-page"), 10);
+        if (!isNaN(idx)) goToPage(idx, true, PAGE_DURATION_MS);
+      });
+    }
+    document.addEventListener("keydown", function (e) {
+      if (totalPages <= 1) return;
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goToPage(currentPage + 1, true, PAGE_DURATION_MS);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goToPage(currentPage - 1, true, PAGE_DURATION_MS);
+      } else if (e.key === " " && !(e.target && e.target.tagName === "BUTTON")) {
+        e.preventDefault();
+        togglePagingPause();
+      }
+    });
+
+    // Recalculate cards-per-page cleanly if window resizes or display scaling changes
+    window.addEventListener("resize", function () {
+      if (resizeDebounce) clearTimeout(resizeDebounce);
+      resizeDebounce = setTimeout(function () {
+        resizeDebounce = null;
+        renderBoard();
+      }, 150);
+    });
 
     // Expose helpers on window for standard script compatibility
     window.tvToggleTheme = toggleTheme;
     window.tvToggleFullscreen = toggleFullscreen;
     window.tvPlayChime = playHospitalChime;
+    window.tvNextPage = function () { goToPage(currentPage + 1, true, PAGE_DURATION_MS); };
+    window.tvPrevPage = function () { goToPage(currentPage - 1, true, PAGE_DURATION_MS); };
+    window.tvTogglePause = togglePagingPause;
 
     // Start clock, audio UI, Wake Lock, initial load & Realtime
     updateClock();
