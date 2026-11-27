@@ -173,6 +173,7 @@
       var specKeys = resolveSpecialtyKeys(specBn, specEn, nextSpecs);
       var parsedDays = parseVisitingDays(row.visiting_days);
       var hoursText = String(row.visiting_hours || "").trim();
+      var uploadedPhoto = String(row.photo_url || "").trim();
       var posterMatch = findHardcodedPosterMatch(row.name_bn, row.name_en);
 
       return {
@@ -207,8 +208,9 @@
         room_no: String(row.room_no || "").trim(),
         current_serial: row.current_serial != null ? Number(row.current_serial) : 0,
         queue_updated_date: row.queue_updated_date ? String(row.queue_updated_date).slice(0, 10) : "",
-        poster: posterMatch ? posterMatch.poster : "",
-        face: posterMatch ? posterMatch.face : null,
+        poster: uploadedPhoto || (posterMatch ? posterMatch.poster : ""),
+        isUploadedPhoto: !!uploadedPhoto,
+        face: uploadedPhoto ? { x: 50, y: 25 } : (posterMatch ? posterMatch.face : null),
         fromSupabase: true
       };
     });
@@ -667,8 +669,11 @@
         }).join(" ");
       }
 
+      var avatarCls = doc.isUploadedPhoto
+        ? "doc-avatar doc-avatar--uploaded group relative"
+        : "doc-avatar group relative";
       var avatarHtml = hasPoster
-        ? '<button type="button" data-poster-doc="' + escapeHtml(doc.id) + '" class="doc-avatar group relative" title="' + escapeHtml(I18N.t("doc.poster")) + '">' +
+        ? '<button type="button" data-poster-doc="' + escapeHtml(doc.id) + '" class="' + avatarCls + '" title="' + escapeHtml(I18N.t("doc.poster")) + '">' +
             '<img src="' + escapeHtml(doc.poster) + '" loading="lazy" decoding="async" ' +
               'style="object-position:' + faceX + "% " + faceY + '%" ' +
               'alt="' + escapeHtml(I18N.t("doc.photoAlt", { name: name })) + '" />' +

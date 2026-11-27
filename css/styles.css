@@ -421,6 +421,9 @@ html[lang="en"] body {
   object-fit: cover;
   transform: scale(1.85);
 }
+.doc-avatar--uploaded img {
+  transform: none;
+}
 .doc-badge {
   display: inline-block;
   font-size: 0.75rem;

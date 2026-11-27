@@ -23,10 +23,39 @@
 
   var AUTO_COMPLETE_KEY = "dmc-admin-auto-complete";
   var SOUND_ALERT_KEY = "dmc-admin-sound-alert";
+  var DOCTOR_PHOTOS_BUCKET =
+    (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.doctorPhotosBucket) || "doctor-photos";
+  var DOCTOR_PHOTO_MAX_DIM = 600;
+  var DOCTOR_PHOTO_QUALITY = 0.82;
+  var DOCTOR_PHOTO_MAX_RAW_BYTES = 15 * 1024 * 1024;
+  var RECENT_WINDOW_DAYS = 7;
+  var RECENT_ROW_LIMIT = 500;
+  var ARCHIVE_ROW_LIMIT = 300;
+  var REPORT_PAGE_SIZE = 1000;
+  var REPORT_MAX_ROWS = 5000;
 
   var appointments = [];
+  var todayQueueAppointments = [];
   var doctorsList = [];
   var activeTab = "appointments";
+  var dataWindow = {
+    mode: "recent", // "recent" (Last 7d + Today + Upcoming) | "archive" (server-side date/search query)
+    from: "",
+    to: "",
+    query: "",
+    hitLimit: false
+  };
+  var reportState = {
+    preset: "this_month",
+    from: "",
+    to: "",
+    rows: [],
+    loaded: false,
+    loading: false,
+    hitLimit: false
+  };
+  var reportRequestSeq = 0;
+  var realtimeReloadTimer = null;
   var filters = {
     search: "",
     doctor: "All",
@@ -46,6 +75,14 @@
   var unseenNewBookings = 0;
   var lastSelfBookingAt = 0;
   var selfCreatedIds = {};
+
+  // Doctor photo upload & client-side WebP compression state
+  var pendingDoctorPhotoBlob = null;
+  var pendingDoctorPhotoMime = "image/webp";
+  var pendingDoctorPhotoExt = "webp";
+  var pendingDoctorPhotoPreviewUrl = "";
+  var removeDoctorPhotoFlag = false;
+  var isCompressingDoctorPhoto = false;
 
   function $(id) {
     return document.getElementById(id);
@@ -75,6 +112,23 @@
 
   function todayIso() {
     return new Date().toLocaleDateString("en-CA");
+  }
+
+  function addDaysIso(baseIso, deltaDays) {
+    var parts = String(baseIso || todayIso()).split("-");
+    var dt = new Date(+parts[0], +parts[1] - 1, +parts[2] + deltaDays);
+    return dt.toLocaleDateString("en-CA");
+  }
+
+  function getRecentWindowStartIso() {
+    return addDaysIso(todayIso(), -RECENT_WINDOW_DAYS);
+  }
+
+  function sanitizePostgrestLike(raw) {
+    return String(raw || "")
+      .replace(/[,()*%]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function formatSerialCode(serialNo) {
@@ -479,15 +533,28 @@
     var confirmedCount = 0;
 
     appointments.forEach(function (r) {
-      if (r.appointment_date === today) todayCount++;
       if (r.status === "Pending") pendingCount++;
       if (r.status === "Confirmed") confirmedCount++;
+    });
+
+    // Always count today's bookings from the dedicated today cache so Archive browsing stays accurate
+    var todaySource = dataWindow.mode === "recent" ? appointments : todayQueueAppointments;
+    todaySource.forEach(function (r) {
+      if (String(r.appointment_date || "").slice(0, 10) === today) todayCount++;
     });
 
     $("countTotal").textContent = String(total);
     $("countToday").textContent = String(todayCount);
     $("countPending").textContent = String(pendingCount);
     $("countConfirmed").textContent = String(confirmedCount);
+
+    var totalLbl = $("totalWindowLabel");
+    if (totalLbl) {
+      totalLbl.textContent =
+        dataWindow.mode === "archive"
+          ? "Archive results" + (dataWindow.hitLimit ? " (first " + ARCHIVE_ROW_LIMIT + ")" : "")
+          : "Last " + RECENT_WINDOW_DAYS + " days + upcoming";
+    }
 
     var tabApptBadge = $("tabAppointmentsCount");
     if (tabApptBadge) tabApptBadge.textContent = String(total);
@@ -557,7 +624,8 @@
       filters.search.trim() !== "" ||
       filters.doctor !== "All" ||
       filters.status !== "All" ||
-      filters.date !== "";
+      filters.date !== "" ||
+      dataWindow.mode === "archive";
     var clearBtn = $("clearFiltersBtn");
     if (clearBtn) clearBtn.classList.toggle("hidden", !hasFilter);
   }
@@ -566,7 +634,18 @@
     var metaEl = $("printMetaLine");
     if (!metaEl) return;
     var parts = [];
-    parts.push("তারিখ (Date): " + (filters.date || "সকল তারিখ / All Dates"));
+    var dateSummary = filters.date;
+    if (!dateSummary) {
+      if (dataWindow.mode === "archive") {
+        if (dataWindow.from && dataWindow.to) dateSummary = dataWindow.from + " → " + dataWindow.to;
+        else if (dataWindow.from) dateSummary = "From " + dataWindow.from;
+        else if (dataWindow.to) dateSummary = "Up to " + dataWindow.to;
+        else dateSummary = "আর্কাইভ / Archive";
+      } else {
+        dateSummary = "গত ৭ দিন ও আসন্ন (Last 7d + Upcoming)";
+      }
+    }
+    parts.push("তারিখ (Date): " + dateSummary);
     if (filters.doctor !== "All") {
       var bnDoc = lookupBanglaDoctorName(filters.doctor);
       parts.push("ডাক্তার: " + (bnDoc ? bnDoc + " (" + filters.doctor + ")" : filters.doctor));
@@ -581,120 +660,259 @@
 
   function renderTable() {
     var tbody = $("appointmentsTbody");
+    var cardsWrap = $("appointmentsCards");
     var empty = $("emptyState");
     var meta = $("resultsMeta");
-    if (!tbody) return;
+    if (!tbody && !cardsWrap) return;
 
     syncClearButtonVisibility();
     var list = getFilteredAppointments();
     updatePrintHeaderMeta(list);
 
     if (meta) {
+      var scopeNoun = dataWindow.mode === "archive" ? "archived" : "recent";
+      var limitNote = dataWindow.hitLimit
+        ? " (capped at " + (dataWindow.mode === "archive" ? ARCHIVE_ROW_LIMIT : RECENT_ROW_LIMIT) + " — narrow dates/search for older)"
+        : "";
       meta.textContent =
-        "Showing " + list.length + " of " + appointments.length + " appointment" + (appointments.length === 1 ? "" : "s");
+        "Showing " + list.length + " of " + appointments.length + " " + scopeNoun +
+        " appointment" + (appointments.length === 1 ? "" : "s") + limitNote;
     }
 
     if (!list.length) {
-      tbody.innerHTML = "";
+      if (tbody) tbody.innerHTML = "";
+      if (cardsWrap) cardsWrap.innerHTML = "";
       if (empty) empty.classList.remove("hidden");
       return;
     }
 
     if (empty) empty.classList.add("hidden");
 
-    tbody.innerHTML = list.map(function (row, idx) {
-      var serialCode = getRowSerialCode(row, idx);
-      var dateInfo = formatDateBadge(row.appointment_date);
-      var createdStr = formatCreatedAt(row.created_at);
-      var bnSub = lookupBanglaDoctorName(row.doctor_name);
-      var waLink = buildPatientWhatsAppLink(row, serialCode);
-      var currentStatus = STATUSES.indexOf(row.status) !== -1 ? row.status : "Pending";
+    if (tbody) {
+      tbody.innerHTML = list.map(function (row, idx) {
+        var serialCode = getRowSerialCode(row, idx);
+        var dateInfo = formatDateBadge(row.appointment_date);
+        var createdStr = formatCreatedAt(row.created_at);
+        var bnSub = lookupBanglaDoctorName(row.doctor_name);
+        var waLink = buildPatientWhatsAppLink(row, serialCode);
+        var currentStatus = STATUSES.indexOf(row.status) !== -1 ? row.status : "Pending";
 
-      var statusOptions = STATUSES.map(function (st) {
-        var sel = st === currentStatus ? " selected" : "";
-        return '<option value="' + st + '"' + sel + ">" + st + "</option>";
-      }).join("");
+        var statusOptions = STATUSES.map(function (st) {
+          var sel = st === currentStatus ? " selected" : "";
+          return '<option value="' + st + '"' + sel + ">" + st + "</option>";
+        }).join("");
 
-      return (
-        '<tr class="hover:bg-slate-50/80 transition align-top">' +
-          // 0. Serial No (SL-XX Badge)
-          '<td class="py-3.5 px-3 text-center whitespace-nowrap">' +
-            '<span class="inline-flex items-center justify-center rounded-lg bg-brand-50 border border-brand-200 px-2 py-1 text-xs font-extrabold text-brand-800 whitespace-nowrap">' +
-              escapeHtml(serialCode) +
-            "</span>" +
-          "</td>" +
+        return (
+          '<tr class="hover:bg-slate-50/80 transition align-top">' +
+            // 0. Serial No (SL-XX Badge)
+            '<td class="py-3.5 px-3 text-center whitespace-nowrap">' +
+              '<span class="inline-flex items-center justify-center rounded-lg bg-brand-50 border border-brand-200 px-2 py-1 text-xs font-extrabold text-brand-800 whitespace-nowrap">' +
+                escapeHtml(serialCode) +
+              "</span>" +
+            "</td>" +
 
-          // 1. Patient & Phone
-          '<td class="py-3.5 px-4">' +
-            '<p class="font-bold text-slate-900 leading-snug">' + escapeHtml(row.patient_name || "—") + "</p>" +
-            '<div class="mt-1 flex items-center gap-2 text-xs">' +
-              '<a href="tel:' + escapeHtml(normalizePhone(row.patient_phone)) + '" class="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline whitespace-nowrap">' +
-                '<svg class="no-print w-3.5 h-3.5"><use href="#i-phone"/></svg>' +
-                "<span>" + escapeHtml(row.patient_phone || "—") + "</span>" +
-              "</a>" +
-            "</div>" +
-          "</td>" +
+            // 1. Patient & Phone
+            '<td class="py-3.5 px-4">' +
+              '<p class="font-bold text-slate-900 leading-snug">' + escapeHtml(row.patient_name || "—") + "</p>" +
+              '<div class="mt-1 flex items-center gap-2 text-xs">' +
+                '<a href="tel:' + escapeHtml(normalizePhone(row.patient_phone)) + '" class="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline whitespace-nowrap">' +
+                  '<svg class="no-print w-3.5 h-3.5"><use href="#i-phone"/></svg>' +
+                  "<span>" + escapeHtml(row.patient_phone || "—") + "</span>" +
+                "</a>" +
+              "</div>" +
+            "</td>" +
 
-          // 2. Doctor & Department
-          '<td class="py-3.5 px-4">' +
-            '<p class="font-semibold text-slate-800 leading-snug">' + escapeHtml(row.doctor_name || "Duty Doctor") + "</p>" +
-            (bnSub ? '<p class="text-xs text-slate-500">' + escapeHtml(bnSub) + "</p>" : "") +
-            (row.department
-              ? '<span class="mt-1 inline-block rounded-full bg-brand-50 text-brand-700 border border-brand-100 px-2.5 py-0.5 text-[11px] font-semibold">' +
-                  escapeHtml(row.department) +
-                "</span>"
-              : "") +
-          "</td>" +
-
-          // 3. Appointment Date & Booked Time
-          '<td class="py-3.5 px-4 whitespace-nowrap">' +
-            '<div class="font-bold text-slate-900">' +
-              escapeHtml(dateInfo.label) + dateInfo.pill +
-            "</div>" +
-            (dateInfo.sub ? '<p class="text-xs text-slate-500 mt-0.5">' + escapeHtml(dateInfo.sub) + "</p>" : "") +
-            (createdStr ? '<p class="no-print text-[11px] text-slate-400 mt-0.5">Booked: ' + escapeHtml(createdStr) + "</p>" : "") +
-          "</td>" +
-
-          // 4. Reception Notes
-          '<td class="py-3.5 px-4 max-w-[220px]">' +
-            (row.notes
-              ? '<p class="text-xs text-slate-700 leading-relaxed break-words">' + escapeHtml(row.notes) + "</p>"
-              : '<span class="no-print text-xs text-slate-300 italic">No notes</span>') +
-          "</td>" +
-
-          // 5. Inline Status Select (Screen) + Plain Text Status (Print)
-          '<td class="py-3.5 px-4">' +
-            '<span class="print-only font-semibold">' + escapeHtml(currentStatus) + "</span>" +
-            '<select data-inline-status="' + escapeHtml(row.id) + '" ' +
-                    'aria-label="Update status for ' + escapeHtml(row.patient_name) + '" ' +
-                    'class="no-print status-select-' + currentStatus + ' w-full rounded-xl border px-2.5 py-1.5 text-base sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition">' +
-              statusOptions +
-            "</select>" +
-          "</td>" +
-
-          // 6. Send Slip on WhatsApp + Edit + Delete Actions (Hidden on Print)
-          '<td class="no-print py-3.5 px-4 text-right whitespace-nowrap">' +
-            '<div class="inline-flex items-center gap-1.5">' +
-              (waLink
-                ? '<a href="' + escapeHtml(waLink) + '" target="_blank" rel="noopener" title="Send Slip on WhatsApp" ' +
-                    'class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 shadow-sm transition whitespace-nowrap">' +
-                    '<svg class="w-3.5 h-3.5"><use href="#i-wa"/></svg>' +
-                    '<span>Send Slip</span>' +
-                  "</a>"
+            // 2. Doctor & Department
+            '<td class="py-3.5 px-4">' +
+              '<p class="font-semibold text-slate-800 leading-snug">' + escapeHtml(row.doctor_name || "Duty Doctor") + "</p>" +
+              (bnSub ? '<p class="text-xs text-slate-500">' + escapeHtml(bnSub) + "</p>" : "") +
+              (row.department
+                ? '<span class="mt-1 inline-block rounded-full bg-brand-50 text-brand-700 border border-brand-100 px-2.5 py-0.5 text-[11px] font-semibold">' +
+                    escapeHtml(row.department) +
+                  "</span>"
                 : "") +
-              '<button type="button" data-edit-id="' + escapeHtml(row.id) + '" title="Edit serial" ' +
-                      'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-brand-50 hover:border-brand-200 text-slate-600 hover:text-brand-700 transition">' +
-                '<svg class="w-4 h-4"><use href="#i-edit"/></svg>' +
-              "</button>" +
-              '<button type="button" data-delete-id="' + escapeHtml(row.id) + '" title="Delete serial" ' +
-                      'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-600 hover:text-rose-600 transition">' +
-                '<svg class="w-4 h-4"><use href="#i-trash"/></svg>' +
-              "</button>" +
+            "</td>" +
+
+            // 3. Appointment Date & Booked Time
+            '<td class="py-3.5 px-4 whitespace-nowrap">' +
+              '<div class="font-bold text-slate-900">' +
+                escapeHtml(dateInfo.label) + dateInfo.pill +
+              "</div>" +
+              (dateInfo.sub ? '<p class="text-xs text-slate-500 mt-0.5">' + escapeHtml(dateInfo.sub) + "</p>" : "") +
+              (createdStr ? '<p class="no-print text-[11px] text-slate-400 mt-0.5">Booked: ' + escapeHtml(createdStr) + "</p>" : "") +
+            "</td>" +
+
+            // 4. Reception Notes
+            '<td class="py-3.5 px-4 max-w-[220px]">' +
+              (row.notes
+                ? '<p class="text-xs text-slate-700 leading-relaxed break-words">' + escapeHtml(row.notes) + "</p>"
+                : '<span class="no-print text-xs text-slate-300 italic">No notes</span>') +
+            "</td>" +
+
+            // 5. Inline Status Select (Screen) + Plain Text Status (Print)
+            '<td class="py-3.5 px-4">' +
+              '<span class="print-only font-semibold">' + escapeHtml(currentStatus) + "</span>" +
+              '<select data-inline-status="' + escapeHtml(row.id) + '" ' +
+                      'aria-label="Update status for ' + escapeHtml(row.patient_name) + '" ' +
+                      'class="no-print status-select-' + currentStatus + ' w-full rounded-xl border px-2.5 py-1.5 text-base sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition">' +
+                statusOptions +
+              "</select>" +
+            "</td>" +
+
+            // 6. Send Slip on WhatsApp + Edit + Delete Actions (Hidden on Print)
+            '<td class="no-print py-3.5 px-4 text-right whitespace-nowrap">' +
+              '<div class="inline-flex items-center gap-1.5">' +
+                (waLink
+                  ? '<a href="' + escapeHtml(waLink) + '" target="_blank" rel="noopener" title="Send Slip on WhatsApp" ' +
+                      'class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 shadow-sm transition whitespace-nowrap">' +
+                      '<svg class="w-3.5 h-3.5"><use href="#i-wa"/></svg>' +
+                      '<span>Send Slip</span>' +
+                    "</a>"
+                  : "") +
+                '<button type="button" data-edit-id="' + escapeHtml(row.id) + '" title="Edit serial" ' +
+                        'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-brand-50 hover:border-brand-200 text-slate-600 hover:text-brand-700 transition">' +
+                  '<svg class="w-4 h-4"><use href="#i-edit"/></svg>' +
+                "</button>" +
+                '<button type="button" data-delete-id="' + escapeHtml(row.id) + '" title="Delete serial" ' +
+                        'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-600 hover:text-rose-600 transition">' +
+                  '<svg class="w-4 h-4"><use href="#i-trash"/></svg>' +
+                "</button>" +
+              "</div>" +
+            "</td>" +
+          "</tr>"
+        );
+      }).join("");
+    }
+
+    if (cardsWrap) {
+      cardsWrap.innerHTML = list.map(function (row, idx) {
+        var serialCode = getRowSerialCode(row, idx);
+        var dateInfo = formatDateBadge(row.appointment_date);
+        var createdStr = formatCreatedAt(row.created_at);
+        var bnSub = lookupBanglaDoctorName(row.doctor_name);
+        var phoneNorm = normalizePhone(row.patient_phone);
+        var waLink = buildPatientWhatsAppLink(row, serialCode);
+        var currentStatus = STATUSES.indexOf(row.status) !== -1 ? row.status : "Pending";
+
+        var statusOptions = STATUSES.map(function (st) {
+          var sel = st === currentStatus ? " selected" : "";
+          return '<option value="' + st + '"' + sel + ">" + st + "</option>";
+        }).join("");
+
+        var quickActionHtml = "";
+        if (currentStatus === "Pending") {
+          quickActionHtml =
+            '<button type="button" data-quick-status-id="' + escapeHtml(row.id) + '" data-quick-status="Confirmed" ' +
+                    'class="inline-flex items-center justify-center gap-1 rounded-xl bg-brand-600 hover:bg-brand-700 active:translate-y-px text-white font-bold text-xs px-3 py-2 shadow-sm transition whitespace-nowrap shrink-0 cursor-pointer">' +
+              '<svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>' +
+              "<span>Confirm</span>" +
+            "</button>";
+        } else if (currentStatus === "Confirmed") {
+          quickActionHtml =
+            '<button type="button" data-quick-status-id="' + escapeHtml(row.id) + '" data-quick-status="Completed" ' +
+                    'class="inline-flex items-center justify-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:translate-y-px text-white font-bold text-xs px-3 py-2 shadow-sm transition whitespace-nowrap shrink-0 cursor-pointer">' +
+              '<svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>' +
+              "<span>Complete</span>" +
+            "</button>";
+        }
+
+        var hasPhone = !!phoneNorm;
+        var actionGridCls = hasPhone && waLink ? "grid-cols-2" : "grid-cols-1";
+
+        return (
+          '<article class="w-full max-w-full min-w-0 overflow-hidden bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5 space-y-3">' +
+            // Top Row: SL-XX Badge + Patient Name + Edit/Delete
+            '<div class="flex items-start justify-between gap-2 min-w-0">' +
+              '<div class="flex items-start gap-2.5 min-w-0 flex-1">' +
+                '<span class="inline-flex items-center justify-center rounded-xl bg-brand-600 text-white px-2.5 py-1 text-xs font-extrabold tracking-wide whitespace-nowrap shrink-0 mt-0.5">' +
+                  escapeHtml(serialCode) +
+                "</span>" +
+                '<div class="min-w-0 flex-1">' +
+                  '<p class="font-extrabold text-slate-900 text-[15px] leading-snug break-words">' +
+                    escapeHtml(row.patient_name || "—") +
+                  "</p>" +
+                  '<p class="text-xs font-semibold text-brand-700 mt-0.5 truncate">' +
+                    escapeHtml(row.patient_phone || "—") +
+                  "</p>" +
+                "</div>" +
+              "</div>" +
+              '<div class="inline-flex items-center gap-1 shrink-0">' +
+                '<button type="button" data-edit-id="' + escapeHtml(row.id) + '" title="Edit serial" aria-label="Edit serial for ' + escapeHtml(row.patient_name) + '" ' +
+                        'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-brand-50 hover:border-brand-200 text-slate-600 hover:text-brand-700 transition cursor-pointer">' +
+                  '<svg class="w-4 h-4"><use href="#i-edit"/></svg>' +
+                "</button>" +
+                '<button type="button" data-delete-id="' + escapeHtml(row.id) + '" title="Delete serial" aria-label="Delete serial for ' + escapeHtml(row.patient_name) + '" ' +
+                        'class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-600 hover:text-rose-600 transition cursor-pointer">' +
+                  '<svg class="w-4 h-4"><use href="#i-trash"/></svg>' +
+                "</button>" +
+              "</div>" +
             "</div>" +
-          "</td>" +
-        "</tr>"
-      );
-    }).join("");
+
+            // Middle Info Block: Doctor, Department, Date & Notes
+            '<div class="rounded-xl bg-slate-50/90 border border-slate-100 px-3 py-2.5 space-y-1.5 min-w-0">' +
+              '<div class="flex flex-wrap items-center justify-between gap-1.5 min-w-0">' +
+                '<div class="min-w-0 flex-1">' +
+                  '<p class="font-bold text-slate-800 text-xs leading-snug break-words">' +
+                    escapeHtml(row.doctor_name || "Duty Doctor") +
+                  "</p>" +
+                  (bnSub ? '<p class="text-[11px] text-slate-500 break-words">' + escapeHtml(bnSub) + "</p>" : "") +
+                "</div>" +
+                (row.department
+                  ? '<span class="inline-block rounded-full bg-brand-50 text-brand-700 border border-brand-100 px-2 py-0.5 text-[11px] font-semibold max-w-full truncate">' +
+                      escapeHtml(row.department) +
+                    "</span>"
+                  : "") +
+              "</div>" +
+
+              '<div class="pt-1.5 border-t border-slate-200/70 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">' +
+                '<span class="font-bold text-slate-800">' +
+                  escapeHtml(dateInfo.label) + dateInfo.pill +
+                "</span>" +
+                (createdStr
+                  ? '<span class="text-[11px] text-slate-400">Booked: ' + escapeHtml(createdStr) + "</span>"
+                  : "") +
+              "</div>" +
+
+              (row.notes
+                ? '<p class="pt-1.5 border-t border-slate-200/70 text-xs text-slate-700 leading-relaxed break-words">' +
+                    '<strong class="text-slate-500 font-semibold">Note:</strong> ' + escapeHtml(row.notes) +
+                  "</p>"
+                : "") +
+            "</div>" +
+
+            // Status Selector + One-Tap Confirm / Complete Shortcut
+            '<div class="flex items-center gap-2 min-w-0">' +
+              '<select data-inline-status="' + escapeHtml(row.id) + '" ' +
+                      'aria-label="Update status for ' + escapeHtml(row.patient_name) + '" ' +
+                      'class="status-select-' + currentStatus + ' flex-1 min-w-0 rounded-xl border px-3 py-2 text-base font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition">' +
+                statusOptions +
+              "</select>" +
+              quickActionHtml +
+            "</div>" +
+
+            // Primary One-Tap Call & WhatsApp Send Slip Buttons
+            (hasPhone || waLink
+              ? '<div class="grid ' + actionGridCls + ' gap-2 pt-1 border-t border-slate-100">' +
+                  (hasPhone
+                    ? '<a href="tel:' + escapeHtml(phoneNorm) + '" ' +
+                        'class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-800 font-bold text-xs py-2.5 px-3 transition whitespace-nowrap">' +
+                        '<svg class="w-4 h-4 shrink-0"><use href="#i-phone"/></svg>' +
+                        "<span>Call Patient</span>" +
+                      "</a>"
+                    : "") +
+                  (waLink
+                    ? '<a href="' + escapeHtml(waLink) + '" target="_blank" rel="noopener" ' +
+                        'class="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-3 shadow-sm transition whitespace-nowrap">' +
+                        '<svg class="w-4 h-4 shrink-0"><use href="#i-wa"/></svg>' +
+                        "<span>Send Slip</span>" +
+                      "</a>"
+                    : "") +
+                "</div>"
+              : "") +
+          "</article>"
+        );
+      }).join("");
+    }
   }
 
   /* ------------ CSV / Excel Export & Print Sheet ------------ */
@@ -780,24 +998,147 @@
     window.print();
   }
 
-  /* ------------ Supabase CRUD Operations ------------ */
-  function loadAppointments(silent) {
-    if (!window.supabaseClient) return Promise.resolve();
-    var icon = $("refreshIcon");
-    if (icon && !silent) icon.classList.add("animate-spin");
+  /* ------------ Supabase CRUD Operations (Windowed Recent + Server-Side Archive) ------------ */
+  function updateDataWindowUI() {
+    var badge = $("windowScopeBadge");
+    var backBtn = $("backToRecentBtn");
+    var hint = $("archiveHint");
+    var isArchive = dataWindow.mode === "archive";
 
+    if (backBtn) backBtn.classList.toggle("hidden", !isArchive);
+
+    if (badge) {
+      if (isArchive) {
+        var bits = [];
+        if (dataWindow.from && dataWindow.to) {
+          bits.push(dataWindow.from === dataWindow.to ? dataWindow.from : dataWindow.from + " → " + dataWindow.to);
+        } else if (dataWindow.from) {
+          bits.push("From " + dataWindow.from);
+        } else if (dataWindow.to) {
+          bits.push("Up to " + dataWindow.to);
+        } else {
+          bits.push("All Dates");
+        }
+        if (dataWindow.query) bits.push('"' + dataWindow.query + '"');
+        badge.textContent = "📦 Archive: " + bits.join(" · ");
+        badge.className =
+          "inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 text-amber-950 px-2.5 py-0.5 text-[11px] font-bold max-w-full truncate";
+      } else {
+        badge.textContent = "📅 Last " + RECENT_WINDOW_DAYS + " Days + Upcoming";
+        badge.className =
+          "inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200/80 text-brand-800 px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap";
+      }
+    }
+
+    if (hint) {
+      hint.textContent = dataWindow.hitLimit
+        ? "Reached " + (isArchive ? ARCHIVE_ROW_LIMIT : RECENT_ROW_LIMIT) + "-row cap — narrow the date range or enter a phone/name to pinpoint older serials."
+        : "Queries Supabase directly (up to " + ARCHIVE_ROW_LIMIT + " rows) without slowing down daily loads. Live Queue stays synced to today.";
+    }
+  }
+
+  function setArchivePanelOpen(open) {
+    var panel = $("archivePanel");
+    var btn = $("toggleArchiveBtn");
+    if (!panel || !btn) return;
+    panel.classList.toggle("hidden", !open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) {
+      var fromInput = $("archiveFromDate");
+      var toInput = $("archiveToDate");
+      if (fromInput && !fromInput.value && !dataWindow.from) {
+        fromInput.value = addDaysIso(todayIso(), -30);
+      }
+      if (toInput && !toInput.value && !dataWindow.to) {
+        toInput.value = todayIso();
+      }
+    }
+  }
+
+  function loadTodayQueueOnly() {
+    if (!window.supabaseClient) return Promise.resolve();
+    var today = todayIso();
     return window.supabaseClient
       .from("appointments")
       .select("*")
-      .order("appointment_date", { ascending: true })
-      .order("created_at", { ascending: false })
+      .eq("appointment_date", today)
+      .order("serial_no", { ascending: true })
+      .order("created_at", { ascending: true })
+      .then(function (res) {
+        if (res.error) return;
+        todayQueueAppointments = Array.isArray(res.data) ? res.data : [];
+        updateCounters();
+        renderLiveQueueControls();
+      })
+      .catch(function () { /* silent background sync */ });
+  }
+
+  function loadAppointments(silent) {
+    if (!window.supabaseClient) return Promise.resolve();
+    var icon = $("refreshIcon");
+    var searchBtn = $("archiveSearchBtn");
+    if (icon && !silent) icon.classList.add("animate-spin");
+    if (searchBtn && dataWindow.mode === "archive" && !silent) {
+      searchBtn.disabled = true;
+      searchBtn.textContent = "Searching…";
+    }
+
+    var today = todayIso();
+    var query;
+    var rowLimit = RECENT_ROW_LIMIT;
+
+    if (dataWindow.mode === "archive") {
+      rowLimit = ARCHIVE_ROW_LIMIT;
+      query = window.supabaseClient.from("appointments").select("*");
+      if (dataWindow.from) query = query.gte("appointment_date", dataWindow.from);
+      if (dataWindow.to) query = query.lte("appointment_date", dataWindow.to);
+
+      var cleanRaw = sanitizePostgrestLike(dataWindow.query);
+      var cleanDigits = sanitizePostgrestLike(toAsciiDigits(dataWindow.query));
+      if (cleanRaw) {
+        var orClauses = [
+          "patient_name.ilike.*" + cleanRaw + "*",
+          "doctor_name.ilike.*" + cleanRaw + "*"
+        ];
+        if (cleanDigits) {
+          orClauses.push("patient_phone.ilike.*" + cleanDigits + "*");
+        }
+        query = query.or(orClauses.join(","));
+      }
+
+      query = query
+        .order("appointment_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(rowLimit);
+    } else {
+      var windowStart = getRecentWindowStartIso();
+      query = window.supabaseClient
+        .from("appointments")
+        .select("*")
+        .gte("appointment_date", windowStart)
+        .order("appointment_date", { ascending: true })
+        .order("created_at", { ascending: false })
+        .limit(rowLimit);
+    }
+
+    return query
       .then(function (res) {
         if (res.error) {
           setDbError(res.error.message);
           return;
         }
         setDbError("");
-        appointments = Array.isArray(res.data) ? res.data : [];
+        var rows = Array.isArray(res.data) ? res.data : [];
+        appointments = rows;
+        dataWindow.hitLimit = rows.length >= rowLimit;
+
+        if (dataWindow.mode === "recent") {
+          todayQueueAppointments = rows.filter(function (r) {
+            return String(r.appointment_date || "").slice(0, 10) === today;
+          });
+        }
+
+        updateDataWindowUI();
         populateDoctorFilter();
         updateCounters();
         renderTable();
@@ -808,47 +1149,111 @@
       })
       .finally(function () {
         if (icon) icon.classList.remove("animate-spin");
+        if (searchBtn) {
+          searchBtn.disabled = false;
+          searchBtn.innerHTML = "<span>🔍 Search History</span>";
+        }
       });
   }
 
-  function handleInlineStatusChange(selectEl) {
-    var idStr = selectEl.getAttribute("data-inline-status");
+  function switchToRecentWindow(silentToast) {
+    dataWindow.mode = "recent";
+    dataWindow.from = "";
+    dataWindow.to = "";
+    dataWindow.query = "";
+    dataWindow.hitLimit = false;
+    setArchivePanelOpen(false);
+    updateDataWindowUI();
+    return loadAppointments(false).then(function () {
+      if (!silentToast) showToast("Switched back to Last " + RECENT_WINDOW_DAYS + " Days + Upcoming");
+    });
+  }
+
+  function runArchiveSearch(fromDate, toDate, queryText, toastLabel) {
+    var fromVal = String(fromDate || "").trim();
+    var toVal = String(toDate || "").trim();
+    var qVal = String(queryText || "").trim();
+
+    if (fromVal && toVal && fromVal > toVal) {
+      var swap = fromVal;
+      fromVal = toVal;
+      toVal = swap;
+      if ($("archiveFromDate")) $("archiveFromDate").value = fromVal;
+      if ($("archiveToDate")) $("archiveToDate").value = toVal;
+    }
+
+    dataWindow.mode = "archive";
+    dataWindow.from = fromVal;
+    dataWindow.to = toVal;
+    dataWindow.query = qVal;
+    dataWindow.hitLimit = false;
+
+    // Clear conflicting single-date client filter unless searching that exact date
+    if (filters.date && !(fromVal === filters.date && toVal === filters.date)) {
+      filters.date = "";
+      if ($("filterDate")) $("filterDate").value = "";
+    }
+
+    updateDataWindowUI();
+    return loadAppointments(false).then(function () {
+      if (toastLabel) showToast(toastLabel);
+    });
+  }
+
+  function scheduleRealtimeAppointmentsReload() {
+    if (realtimeReloadTimer) clearTimeout(realtimeReloadTimer);
+    realtimeReloadTimer = setTimeout(function () {
+      realtimeReloadTimer = null;
+      if (dataWindow.mode === "recent") {
+        loadAppointments(true);
+      } else {
+        // Preserve active Archive view while keeping Today's Live Queue & counters fresh
+        loadTodayQueueOnly();
+      }
+      invalidateReportCache();
+    }, 200);
+  }
+
+  function updateAppointmentStatus(idStr, nextStatus, controlEl) {
     var row = findRowById(idStr);
     if (!row) return;
 
     var prevStatus = row.status;
-    var nextStatus = selectEl.value;
     if (prevStatus === nextStatus) return;
 
-    selectEl.disabled = true;
+    if (controlEl) controlEl.disabled = true;
     window.supabaseClient
       .from("appointments")
       .update({ status: nextStatus })
       .eq("id", row.id)
       .then(function (res) {
         if (res.error) {
-          selectEl.value = prevStatus;
+          if (controlEl && controlEl.tagName === "SELECT") controlEl.value = prevStatus;
           showToast("Failed to update status: " + res.error.message, true);
           return;
         }
         row.status = nextStatus;
-        selectEl.className =
-          "no-print status-select-" + nextStatus +
-          " w-full rounded-xl border px-2.5 py-1.5 text-base sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer transition";
-        var printSpan = selectEl.parentElement && selectEl.parentElement.querySelector("span.print-only");
-        if (printSpan) printSpan.textContent = nextStatus;
+        todayQueueAppointments.forEach(function (tRow) {
+          if (String(tRow.id) === String(row.id)) tRow.status = nextStatus;
+        });
         updateCounters();
-        if (filters.status !== "All") renderTable();
+        renderTable();
         renderLiveQueueControls();
+        invalidateReportCache();
         showToast("Status updated to " + nextStatus);
       })
       .catch(function (err) {
-        selectEl.value = prevStatus;
+        if (controlEl && controlEl.tagName === "SELECT") controlEl.value = prevStatus;
         showToast((err && err.message) || "Network error", true);
       })
       .finally(function () {
-        selectEl.disabled = false;
+        if (controlEl) controlEl.disabled = false;
       });
+  }
+
+  function handleInlineStatusChange(selectEl) {
+    var idStr = selectEl.getAttribute("data-inline-status");
+    updateAppointmentStatus(idStr, selectEl.value, selectEl);
   }
 
   /* ------------ Create & Edit Modal Logic ------------ */
@@ -1045,6 +1450,14 @@
             ? "Appointment updated"
             : (createdCode ? "New serial " + createdCode + " created" : "New serial created")
         );
+        if (!editingIdStr && dataWindow.mode === "archive" && appointment_date >= getRecentWindowStartIso()) {
+          invalidateReportCache();
+          return switchToRecentWindow(true);
+        }
+        if (dataWindow.mode === "archive" && appointment_date === todayIso()) {
+          loadTodayQueueOnly();
+        }
+        invalidateReportCache();
         return loadAppointments(true);
       })
       .catch(function (err) {
@@ -1056,42 +1469,55 @@
       });
   }
 
-  /* ------------ Tab Switcher (Appointments vs Manage Doctors) ------------ */
+  /* ------------ Tab Switcher (Appointments vs Manage Doctors vs Reports) ------------ */
   function switchTab(tabName) {
-    activeTab = tabName === "doctors" ? "doctors" : "appointments";
+    if (tabName === "doctors") activeTab = "doctors";
+    else if (tabName === "reports") activeTab = "reports";
+    else activeTab = "appointments";
+
     var isAppt = activeTab === "appointments";
+    var isDoc = activeTab === "doctors";
+    var isRep = activeTab === "reports";
 
     var apptBtn = $("tabAppointmentsBtn");
     var docBtn = $("tabDoctorsBtn");
+    var repBtn = $("tabReportsBtn");
     var apptPanel = $("appointmentsPanel");
     var docPanel = $("doctorsPanel");
+    var repPanel = $("reportsPanel");
     var apptBadge = $("tabAppointmentsCount");
     var docBadge = $("tabDoctorsCount");
 
     if (apptPanel) apptPanel.classList.toggle("hidden", !isAppt);
-    if (docPanel) docPanel.classList.toggle("hidden", isAppt);
+    if (docPanel) docPanel.classList.toggle("hidden", !isDoc);
+    if (repPanel) repPanel.classList.toggle("hidden", !isRep);
+
+    var baseTabCls =
+      "w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl px-3.5 sm:px-4 py-2.5 text-sm font-bold transition cursor-pointer ";
+    var activeTabCls = "bg-brand-600 text-white shadow-sm";
+    var idleTabCls = "text-slate-600 hover:bg-slate-100";
 
     if (apptBtn) {
       apptBtn.setAttribute("aria-selected", isAppt ? "true" : "false");
-      apptBtn.className =
-        "flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition cursor-pointer " +
-        (isAppt ? "bg-brand-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100");
+      apptBtn.className = baseTabCls + (isAppt ? activeTabCls : idleTabCls);
     }
     if (docBtn) {
-      docBtn.setAttribute("aria-selected", !isAppt ? "true" : "false");
-      docBtn.className =
-        "flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition cursor-pointer " +
-        (!isAppt ? "bg-brand-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100");
+      docBtn.setAttribute("aria-selected", isDoc ? "true" : "false");
+      docBtn.className = baseTabCls + (isDoc ? activeTabCls : idleTabCls);
+    }
+    if (repBtn) {
+      repBtn.setAttribute("aria-selected", isRep ? "true" : "false");
+      repBtn.className = baseTabCls + (isRep ? activeTabCls : idleTabCls);
     }
     if (apptBadge) {
       apptBadge.className =
-        "rounded-full px-2 py-0.5 text-xs font-extrabold " +
+        "rounded-full px-2 py-0.5 text-xs font-extrabold shrink-0 " +
         (isAppt ? "bg-white/20 text-white" : "bg-slate-200/80 text-slate-700");
     }
     if (docBadge) {
       docBadge.className =
-        "rounded-full px-2 py-0.5 text-xs font-extrabold " +
-        (!isAppt ? "bg-white/20 text-white" : "bg-slate-200/80 text-slate-700");
+        "rounded-full px-2 py-0.5 text-xs font-extrabold shrink-0 " +
+        (isDoc ? "bg-white/20 text-white" : "bg-slate-200/80 text-slate-700");
     }
   }
 
@@ -1178,6 +1604,12 @@
       var statusBadge = isActive
         ? '<span class="text-xs font-bold text-emerald-700">Active</span>'
         : '<span class="text-xs font-bold text-slate-500">Off-Duty</span>';
+      var photoInfo = resolveDoctorDisplayPhoto(doc);
+      var thumbHtml = photoInfo.url
+        ? '<img src="' + escapeHtml(photoInfo.url) + '" loading="lazy" decoding="async" alt="" ' +
+            'class="w-10 h-10 rounded-xl object-cover ring-1 ' +
+            (photoInfo.isUploaded ? "ring-emerald-300" : "ring-slate-200") + ' shrink-0 bg-brand-50" />'
+        : '<div class="w-10 h-10 rounded-xl bg-brand-50 border border-brand-100 text-brand-600 grid place-items-center text-base shrink-0" aria-hidden="true">🩺</div>';
 
       return (
         '<tr class="hover:bg-slate-50/80 transition align-top">' +
@@ -1200,15 +1632,20 @@
             "</div>" +
           "</td>" +
 
-          // Doctor Name & Qualifications
+          // Doctor Name, Photo Thumbnail & Qualifications
           '<td class="py-3.5 px-4">' +
-            '<p class="font-bold text-slate-900 leading-snug">' + escapeHtml(doc.name_bn || doc.name_en || "—") + "</p>" +
-            (doc.name_en && doc.name_en !== doc.name_bn
-              ? '<p class="text-xs font-semibold text-brand-700 mt-0.5">' + escapeHtml(doc.name_en) + "</p>"
-              : "") +
-            (doc.qualifications
-              ? '<p class="text-xs text-slate-500 mt-1 leading-relaxed max-w-xs">' + escapeHtml(doc.qualifications) + "</p>"
-              : "") +
+            '<div class="flex items-start gap-2.5">' +
+              thumbHtml +
+              '<div class="min-w-0">' +
+                '<p class="font-bold text-slate-900 leading-snug">' + escapeHtml(doc.name_bn || doc.name_en || "—") + "</p>" +
+                (doc.name_en && doc.name_en !== doc.name_bn
+                  ? '<p class="text-xs font-semibold text-brand-700 mt-0.5">' + escapeHtml(doc.name_en) + "</p>"
+                  : "") +
+                (doc.qualifications
+                  ? '<p class="text-xs text-slate-500 mt-1 leading-relaxed max-w-xs">' + escapeHtml(doc.qualifications) + "</p>"
+                  : "") +
+              "</div>" +
+            "</div>" +
           "</td>" +
 
           // Specialty (BN & EN)
@@ -1345,7 +1782,7 @@
   }
 
   function getDoctorTodayQueueContext(doc, today, currentNum) {
-    var todayRows = appointments
+    var todayRows = todayQueueAppointments
       .filter(function (row) {
         return (
           String(row.appointment_date || "").slice(0, 10) === today &&
@@ -1521,7 +1958,7 @@
     // Identify previous serial's active appointment(s) to auto-mark Completed when advancing
     var prevRowsToComplete = [];
     if (action === "next" && autoCompleteOnNext && currentNum > 0) {
-      prevRowsToComplete = appointments.filter(function (row) {
+      prevRowsToComplete = todayQueueAppointments.filter(function (row) {
         return (
           String(row.appointment_date || "").slice(0, 10) === today &&
           Number(row.serial_no) === currentNum &&
@@ -1559,8 +1996,14 @@
               var prevCode = formatSerialCode(currentNum);
               if (!compRes.error) {
                 prevRowsToComplete.forEach(function (r) { r.status = "Completed"; });
+                var completedIdSet = {};
+                prevIds.forEach(function (cid) { completedIdSet[String(cid)] = true; });
+                appointments.forEach(function (r) {
+                  if (completedIdSet[String(r.id)]) r.status = "Completed";
+                });
                 updateCounters();
                 renderTable();
+                invalidateReportCache();
                 showToast(
                   (doc.name_en || doc.name_bn) +
                     " — Now Serving " + formatSerialCode(nextSerial) +
@@ -1656,6 +2099,363 @@
       });
   }
 
+  /* ------------ Doctor Photo Compression & Supabase Storage Helpers ------------ */
+  function normalizeDoctorPhotoKey(name) {
+    var s = String(name || "");
+    if (typeof s.normalize === "function") s = s.normalize("NFC");
+    return s
+      .trim()
+      .toLowerCase()
+      .replace(/^ডা[.:ঃ]?\s*/, "ডা.")
+      .replace(/মো[.:ঃ]\s*/g, "মোঃ ")
+      .replace(/^dr\.?\s*/i, "dr.")
+      .replace(/\s+/g, " ");
+  }
+
+  function findFallbackDoctorPoster(doc) {
+    if (!doc || !Array.isArray(window.DOCTORS)) return "";
+    var enKey = normalizeDoctorPhotoKey(doc.name_en);
+    var bnKey = normalizeDoctorPhotoKey(doc.name_bn);
+    var match = window.DOCTORS.find(function (d) {
+      return (
+        (enKey && d.name && d.name.en && normalizeDoctorPhotoKey(d.name.en) === enKey) ||
+        (bnKey && d.name && d.name.bn && normalizeDoctorPhotoKey(d.name.bn) === bnKey)
+      );
+    });
+    return match && match.poster ? match.poster : "";
+  }
+
+  function resolveDoctorDisplayPhoto(doc) {
+    var uploaded = doc && doc.photo_url ? String(doc.photo_url).trim() : "";
+    if (uploaded) return { url: uploaded, isUploaded: true };
+    var fallback = findFallbackDoctorPoster(doc);
+    if (fallback) return { url: fallback, isUploaded: false };
+    return { url: "", isUploaded: false };
+  }
+
+  function extractStoragePathFromPublicUrl(url) {
+    var raw = String(url || "").trim();
+    if (!raw) return "";
+    var marker = "/storage/v1/object/public/" + DOCTOR_PHOTOS_BUCKET + "/";
+    var idx = raw.indexOf(marker);
+    if (idx === -1) return "";
+    var pathPart = raw.slice(idx + marker.length).split("?")[0];
+    try {
+      return decodeURIComponent(pathPart);
+    } catch (e) {
+      return pathPart;
+    }
+  }
+
+  function deleteDoctorPhotoFromStorage(url) {
+    if (!window.supabaseClient || !window.supabaseClient.storage) return Promise.resolve();
+    var storagePath = extractStoragePathFromPublicUrl(url);
+    if (!storagePath) return Promise.resolve();
+    return window.supabaseClient.storage
+      .from(DOCTOR_PHOTOS_BUCKET)
+      .remove([storagePath])
+      .catch(function () { /* best-effort storage cleanup */ });
+  }
+
+  function compressDoctorPhotoToWebP(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file) {
+        reject(new Error("No image file selected."));
+        return;
+      }
+      var isImage =
+        (file.type && file.type.indexOf("image/") === 0) ||
+        /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(file.name || "");
+      if (!isImage) {
+        reject(new Error("Please select a valid image file (JPG, PNG, or WebP)."));
+        return;
+      }
+      if (file.size > DOCTOR_PHOTO_MAX_RAW_BYTES) {
+        reject(new Error("Image is too large (max 15 MB before compression)."));
+        return;
+      }
+
+      var objectUrl = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(objectUrl);
+        var natW = img.naturalWidth || img.width;
+        var natH = img.naturalHeight || img.height;
+        if (!natW || !natH) {
+          reject(new Error("Could not read image dimensions."));
+          return;
+        }
+
+        // Smart square portrait crop (biases tall phone photos toward head/shoulders)
+        var side = Math.min(natW, natH);
+        var sx = Math.round((natW - side) / 2);
+        var sy = natH > natW ? Math.round((natH - side) * 0.2) : Math.round((natH - side) / 2);
+        var target = Math.min(DOCTOR_PHOTO_MAX_DIM, side);
+
+        var canvas = document.createElement("canvas");
+        canvas.width = target;
+        canvas.height = target;
+        var ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas image processing is unavailable in this browser."));
+          return;
+        }
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, target, target);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, target, target);
+
+        canvas.toBlob(function (webpBlob) {
+          if (webpBlob && webpBlob.type === "image/webp") {
+            resolve({
+              blob: webpBlob,
+              mime: "image/webp",
+              ext: "webp",
+              width: target,
+              height: target
+            });
+            return;
+          }
+          // Graceful fallback for older browsers (e.g. legacy Safari) without WebP canvas encoding
+          canvas.toBlob(function (jpgBlob) {
+            if (!jpgBlob) {
+              reject(new Error("Could not compress selected image."));
+              return;
+            }
+            resolve({
+              blob: jpgBlob,
+              mime: "image/jpeg",
+              ext: "jpg",
+              width: target,
+              height: target
+            });
+          }, "image/jpeg", 0.85);
+        }, "image/webp", DOCTOR_PHOTO_QUALITY);
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Failed to load image. Please try another JPG, PNG, or WebP photo."));
+      };
+      img.src = objectUrl;
+    });
+  }
+
+  function uploadDoctorPhotoToStorage(blob, ext, mime, doctorName) {
+    if (!window.supabaseClient || !window.supabaseClient.storage) {
+      return Promise.reject(new Error("Supabase Storage client is unavailable."));
+    }
+    var slug = String(doctorName || "doctor")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 40) || "doctor";
+    var rand = Math.random().toString(36).slice(2, 7);
+    var filePath = "doctor-" + slug + "-" + Date.now() + "-" + rand + "." + (ext || "webp");
+
+    return window.supabaseClient.storage
+      .from(DOCTOR_PHOTOS_BUCKET)
+      .upload(filePath, blob, {
+        contentType: mime || "image/webp",
+        cacheControl: "31536000",
+        upsert: false
+      })
+      .then(function (uploadRes) {
+        if (uploadRes.error) {
+          throw new Error(uploadRes.error.message || "Photo upload failed.");
+        }
+        var pub = window.supabaseClient.storage
+          .from(DOCTOR_PHOTOS_BUCKET)
+          .getPublicUrl(filePath);
+        var publicUrl = pub && pub.data && pub.data.publicUrl ? pub.data.publicUrl : "";
+        if (!publicUrl) {
+          throw new Error("Uploaded photo succeeded, but public URL could not be resolved.");
+        }
+        return publicUrl;
+      });
+  }
+
+  function resetDoctorPhotoState() {
+    if (pendingDoctorPhotoPreviewUrl) {
+      URL.revokeObjectURL(pendingDoctorPhotoPreviewUrl);
+      pendingDoctorPhotoPreviewUrl = "";
+    }
+    pendingDoctorPhotoBlob = null;
+    pendingDoctorPhotoMime = "image/webp";
+    pendingDoctorPhotoExt = "webp";
+    removeDoctorPhotoFlag = false;
+    isCompressingDoctorPhoto = false;
+    var input = $("dPhotoInput");
+    if (input) input.value = "";
+  }
+
+  function setDoctorPhotoPreviewUI(url, metaText, metaTone, canRemove, pickText) {
+    var previewImg = $("dPhotoPreview");
+    var placeholder = $("dPhotoPlaceholder");
+    var metaEl = $("dPhotoMeta");
+    var removeBtn = $("dPhotoRemoveBtn");
+    var pickLabel = $("dPhotoPickLabel");
+
+    if (previewImg && placeholder) {
+      if (url) {
+        previewImg.src = url;
+        previewImg.classList.remove("hidden");
+        placeholder.classList.add("hidden");
+      } else {
+        previewImg.removeAttribute("src");
+        previewImg.classList.add("hidden");
+        placeholder.classList.remove("hidden");
+      }
+    }
+    if (metaEl) {
+      metaEl.textContent = metaText || "Optional · Auto-compressed to WebP for fast mobile loading";
+      metaEl.className =
+        "text-[11px] mt-0.5 truncate " +
+        (metaTone === "ok"
+          ? "text-emerald-700 font-semibold"
+          : metaTone === "warn"
+            ? "text-amber-700 font-semibold"
+            : "text-slate-500");
+    }
+    if (removeBtn) {
+      removeBtn.classList.toggle("hidden", !canRemove);
+    }
+    if (pickLabel) {
+      pickLabel.innerHTML = "<span>" + escapeHtml(pickText || "📷 Upload Photo") + "</span>";
+    }
+  }
+
+  function syncDoctorPhotoModalUI(existingDoc) {
+    if (pendingDoctorPhotoBlob && pendingDoctorPhotoPreviewUrl) {
+      var kb = Math.max(1, Math.round(pendingDoctorPhotoBlob.size / 1024));
+      setDoctorPhotoPreviewUI(
+        pendingDoctorPhotoPreviewUrl,
+        "✓ Ready: " + kb + " KB " + pendingDoctorPhotoExt.toUpperCase() + " (compressed)",
+        "ok",
+        true,
+        "📷 Change Photo"
+      );
+      return;
+    }
+
+    var savedUrl = ($("dPhotoUrl") && $("dPhotoUrl").value || "").trim();
+    if (savedUrl && !removeDoctorPhotoFlag) {
+      setDoctorPhotoPreviewUI(
+        savedUrl,
+        "Saved in Supabase Storage",
+        "ok",
+        true,
+        "📷 Replace Photo"
+      );
+      return;
+    }
+
+    var fallbackUrl = existingDoc ? findFallbackDoctorPoster(existingDoc) : "";
+    if (removeDoctorPhotoFlag) {
+      setDoctorPhotoPreviewUI(
+        fallbackUrl,
+        fallbackUrl
+          ? "Uploaded photo will be removed (falls back to built-in photo)"
+          : "Uploaded photo will be removed on Save",
+        "warn",
+        false,
+        "📷 Upload Photo"
+      );
+      return;
+    }
+
+    if (fallbackUrl) {
+      setDoctorPhotoPreviewUI(
+        fallbackUrl,
+        "Using built-in clinic photo · upload to replace",
+        "muted",
+        false,
+        "📷 Replace Photo"
+      );
+      return;
+    }
+
+    setDoctorPhotoPreviewUI(
+      "",
+      "Optional · Auto-compressed to WebP for fast mobile loading",
+      "muted",
+      false,
+      "📷 Upload Photo"
+    );
+  }
+
+  function handleDoctorPhotoInputChange(e) {
+    var input = e.target;
+    var file = input && input.files && input.files[0];
+    if (!file) return;
+
+    showDoctorModalError("");
+    isCompressingDoctorPhoto = true;
+    var saveBtn = $("doctorModalSaveBtn");
+    if (saveBtn) saveBtn.disabled = true;
+    setDoctorPhotoPreviewUI(
+      pendingDoctorPhotoPreviewUrl || ($("dPhotoUrl") && $("dPhotoUrl").value) || "",
+      "Optimizing photo to WebP…",
+      "muted",
+      false,
+      "Optimizing…"
+    );
+
+    compressDoctorPhotoToWebP(file)
+      .then(function (result) {
+        if (pendingDoctorPhotoPreviewUrl) {
+          URL.revokeObjectURL(pendingDoctorPhotoPreviewUrl);
+        }
+        pendingDoctorPhotoBlob = result.blob;
+        pendingDoctorPhotoMime = result.mime;
+        pendingDoctorPhotoExt = result.ext;
+        pendingDoctorPhotoPreviewUrl = URL.createObjectURL(result.blob);
+        removeDoctorPhotoFlag = false;
+
+        var kb = Math.max(1, Math.round(result.blob.size / 1024));
+        setDoctorPhotoPreviewUI(
+          pendingDoctorPhotoPreviewUrl,
+          "✓ Ready: " + kb + " KB " + result.ext.toUpperCase() + " (" + result.width + "×" + result.height + ")",
+          "ok",
+          true,
+          "📷 Change Photo"
+        );
+      })
+      .catch(function (err) {
+        if (input) input.value = "";
+        showDoctorModalError((err && err.message) || "Could not process selected photo.");
+        var editingId = $("dId") ? $("dId").value : "";
+        syncDoctorPhotoModalUI(editingId ? findDoctorById(editingId) : null);
+      })
+      .finally(function () {
+        isCompressingDoctorPhoto = false;
+        if (saveBtn) saveBtn.disabled = false;
+      });
+  }
+
+  function handleDoctorPhotoRemove() {
+    if (pendingDoctorPhotoPreviewUrl) {
+      URL.revokeObjectURL(pendingDoctorPhotoPreviewUrl);
+      pendingDoctorPhotoPreviewUrl = "";
+    }
+    var hadStaged = !!pendingDoctorPhotoBlob;
+    pendingDoctorPhotoBlob = null;
+    var input = $("dPhotoInput");
+    if (input) input.value = "";
+
+    var savedUrl = ($("dPhotoUrl") && $("dPhotoUrl").value || "").trim();
+    if (!hadStaged && savedUrl) {
+      removeDoctorPhotoFlag = true;
+    } else if (hadStaged && savedUrl) {
+      // Discarded staged replacement; keep existing saved photo visible
+      removeDoctorPhotoFlag = false;
+    }
+
+    var editingId = $("dId") ? $("dId").value : "";
+    syncDoctorPhotoModalUI(editingId ? findDoctorById(editingId) : null);
+  }
+
   function showDoctorModalError(msg) {
     var errEl = $("doctorModalError");
     if (!errEl) return;
@@ -1669,7 +2469,9 @@
   }
 
   function openAddDoctorModal() {
+    resetDoctorPhotoState();
     $("dId").value = "";
+    if ($("dPhotoUrl")) $("dPhotoUrl").value = "";
     $("dNameBn").value = "";
     $("dNameEn").value = "";
     $("dQualifications").value = "";
@@ -1680,6 +2482,7 @@
     $("dRoomNo").value = "";
     $("dDisplayOrder").value = "";
     $("dIsActive").checked = true;
+    syncDoctorPhotoModalUI(null);
 
     $("doctorModalTitle").textContent = "+ নতুন ডাক্তার যোগ করুন (Add Doctor)";
     $("doctorModalSubtitle").textContent = "Add a specialist doctor to the live clinic directory";
@@ -1697,7 +2500,9 @@
     var doc = findDoctorById(idStr);
     if (!doc) return;
 
+    resetDoctorPhotoState();
     $("dId").value = String(doc.id);
+    if ($("dPhotoUrl")) $("dPhotoUrl").value = doc.photo_url ? String(doc.photo_url).trim() : "";
     $("dNameBn").value = doc.name_bn || "";
     $("dNameEn").value = doc.name_en || "";
     $("dQualifications").value = doc.qualifications || "";
@@ -1709,9 +2514,10 @@
     $("dDisplayOrder").value =
       doc.display_order != null && doc.display_order !== "" ? String(doc.display_order) : "";
     $("dIsActive").checked = doc.is_active !== false;
+    syncDoctorPhotoModalUI(doc);
 
     $("doctorModalTitle").textContent = "Edit Doctor Details";
-    $("doctorModalSubtitle").textContent = "Update chamber schedule, qualifications, room, display order, or duty status";
+    $("doctorModalSubtitle").textContent = "Update photo, chamber schedule, qualifications, room, display order, or duty status";
     $("doctorModalSaveBtn").textContent = "Save Changes";
     showDoctorModalError("");
 
@@ -1720,12 +2526,18 @@
   }
 
   function closeDoctorModal() {
+    resetDoctorPhotoState();
     var dlg = $("doctorModal");
     if (dlg && dlg.open) dlg.close();
   }
 
   function handleDoctorModalSubmit(e) {
     e.preventDefault();
+    if (isCompressingDoctorPhoto) {
+      showDoctorModalError("Please wait a moment while the photo finishes optimizing…");
+      return;
+    }
+
     var editingIdStr = $("dId").value;
     var name_bn = ($("dNameBn").value || "").trim();
     var name_en = ($("dNameEn").value || "").trim();
@@ -1779,6 +2591,14 @@
       }
     }
 
+    var existing = editingIdStr ? findDoctorById(editingIdStr) : null;
+    var previousPhotoUrl = existing && existing.photo_url ? String(existing.photo_url).trim() : "";
+    var stagedBlob = pendingDoctorPhotoBlob;
+    var stagedExt = pendingDoctorPhotoExt;
+    var stagedMime = pendingDoctorPhotoMime;
+    var shouldRemovePhoto = removeDoctorPhotoFlag;
+    var newlyUploadedUrl = "";
+
     var payload = {
       name_bn: name_bn,
       name_en: name_en,
@@ -1799,35 +2619,69 @@
     var saveBtn = $("doctorModalSaveBtn");
     saveBtn.disabled = true;
     var originalText = saveBtn.textContent;
-    saveBtn.textContent = "Saving…";
+    saveBtn.textContent = stagedBlob ? "Uploading photo…" : "Saving…";
     showDoctorModalError("");
 
-    var req;
-    if (editingIdStr) {
-      var existing = findDoctorById(editingIdStr);
-      var targetId = existing ? existing.id : editingIdStr;
-      req = window.supabaseClient
-        .from("doctors")
-        .update(payload)
-        .eq("id", targetId);
-    } else {
-      req = window.supabaseClient
-        .from("doctors")
-        .insert([payload]);
-    }
+    var uploadStep = stagedBlob
+      ? uploadDoctorPhotoToStorage(stagedBlob, stagedExt, stagedMime, name_en || name_bn).then(function (url) {
+          newlyUploadedUrl = url;
+          payload.photo_url = url;
+          saveBtn.textContent = "Saving…";
+        })
+      : Promise.resolve().then(function () {
+          if (shouldRemovePhoto) {
+            payload.photo_url = null;
+          }
+        });
 
-    req
+    uploadStep
+      .then(function () {
+        if (editingIdStr) {
+          var targetId = existing ? existing.id : editingIdStr;
+          return window.supabaseClient
+            .from("doctors")
+            .update(payload)
+            .eq("id", targetId);
+        }
+        return window.supabaseClient
+          .from("doctors")
+          .insert([payload]);
+      })
       .then(function (res) {
         if (res.error) {
-          showDoctorModalError(res.error.message || "Could not save doctor.");
+          if (newlyUploadedUrl) {
+            deleteDoctorPhotoFromStorage(newlyUploadedUrl);
+          }
+          var errMsg = res.error.message || "Could not save doctor.";
+          if (/photo_url/i.test(errMsg)) {
+            errMsg =
+              "Database needs the new photo_url column — run the updated supabase-schema.sql in Supabase SQL Editor, then save again.";
+          }
+          showDoctorModalError(errMsg);
           return;
         }
+        if (previousPhotoUrl && (newlyUploadedUrl || shouldRemovePhoto)) {
+          deleteDoctorPhotoFromStorage(previousPhotoUrl);
+        }
         closeDoctorModal();
-        showToast(editingIdStr ? "Doctor details updated" : "New doctor added");
+        showToast(
+          editingIdStr
+            ? (newlyUploadedUrl ? "Doctor photo & details updated" : "Doctor details updated")
+            : (newlyUploadedUrl ? "New doctor added with photo" : "New doctor added")
+        );
         return loadDoctors(true);
       })
       .catch(function (err) {
-        showDoctorModalError((err && err.message) || "Network error while saving doctor.");
+        if (newlyUploadedUrl) {
+          deleteDoctorPhotoFromStorage(newlyUploadedUrl);
+        }
+        var msg = (err && err.message) || "Network error while saving doctor.";
+        if (/bucket/i.test(msg) || /row-level security/i.test(msg)) {
+          msg =
+            "Storage bucket '" + DOCTOR_PHOTOS_BUCKET +
+            "' is not set up yet — run the updated supabase-schema.sql in Supabase SQL Editor, then try again. (" + msg + ")";
+        }
+        showDoctorModalError(msg);
       })
       .finally(function () {
         saveBtn.disabled = false;
@@ -1955,6 +2809,9 @@
           return;
         }
         if (target.type === "doctor") {
+          if (target.row && target.row.photo_url) {
+            deleteDoctorPhotoFromStorage(target.row.photo_url);
+          }
           doctorsList = doctorsList.filter(function (d) { return d.id !== target.row.id; });
           updateDoctorCounters();
           renderLiveQueueControls();
@@ -1964,9 +2821,11 @@
           showToast("Doctor deleted");
         } else {
           appointments = appointments.filter(function (r) { return r.id !== target.row.id; });
+          todayQueueAppointments = todayQueueAppointments.filter(function (r) { return r.id !== target.row.id; });
           updateCounters();
           renderTable();
           renderLiveQueueControls();
+          invalidateReportCache();
           showToast("Serial record deleted");
         }
         closeDeleteModal();
@@ -1991,21 +2850,21 @@
           { event: "INSERT", schema: "public", table: "appointments" },
           function (payload) {
             handleIncomingRealtimeBooking(payload && payload.new ? payload.new : null);
-            loadAppointments(true);
+            scheduleRealtimeAppointmentsReload();
           }
         )
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "appointments" },
           function () {
-            loadAppointments(true);
+            scheduleRealtimeAppointmentsReload();
           }
         )
         .on(
           "postgres_changes",
           { event: "DELETE", schema: "public", table: "appointments" },
           function () {
-            loadAppointments(true);
+            scheduleRealtimeAppointmentsReload();
           }
         )
         .on(
@@ -2030,6 +2889,1047 @@
     }
   }
 
+  /* ------------ Hospital Management Analytics & Reports ------------ */
+  var REPORT_WEEKDAYS = [
+    { dow: 6, en: "Saturday", bn: "শনিবার", shortLabel: "শনি (Sat)" },
+    { dow: 0, en: "Sunday", bn: "রবিবার", shortLabel: "রবি (Sun)" },
+    { dow: 1, en: "Monday", bn: "সোমবার", shortLabel: "সোম (Mon)" },
+    { dow: 2, en: "Tuesday", bn: "মঙ্গলবার", shortLabel: "মঙ্গল (Tue)" },
+    { dow: 3, en: "Wednesday", bn: "বুধবার", shortLabel: "বুধ (Wed)" },
+    { dow: 4, en: "Thursday", bn: "বৃহস্পতিবার", shortLabel: "বৃহঃ (Thu)" },
+    { dow: 5, en: "Friday", bn: "শুক্রবার", shortLabel: "শুক্র (Fri)" }
+  ];
+
+  function parseIsoDateLocal(iso) {
+    if (!iso) return null;
+    var parts = String(iso).slice(0, 10).split("-");
+    if (parts.length !== 3) return null;
+    var y = parseInt(parts[0], 10);
+    var m = parseInt(parts[1], 10);
+    var d = parseInt(parts[2], 10);
+    if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+    var dt = new Date(y, m - 1, d);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  function getMonthRangeIso(monthOffset) {
+    var now = new Date();
+    var first = new Date(now.getFullYear(), now.getMonth() + (monthOffset || 0), 1);
+    var last = new Date(now.getFullYear(), now.getMonth() + (monthOffset || 0) + 1, 0);
+    return {
+      from: first.toLocaleDateString("en-CA"),
+      to: last.toLocaleDateString("en-CA")
+    };
+  }
+
+  function diffDaysInclusive(fromIso, toIso) {
+    var a = parseIsoDateLocal(fromIso);
+    var b = parseIsoDateLocal(toIso);
+    if (!a || !b) return 1;
+    var utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+    var utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+    return Math.max(1, Math.round((utcB - utcA) / 86400000) + 1);
+  }
+
+  function formatReportShortDate(iso) {
+    var dt = parseIsoDateLocal(iso);
+    if (!dt) return String(iso || "");
+    var md = dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    var wd = dt.toLocaleDateString("en-US", { weekday: "short" });
+    return md + " · " + wd;
+  }
+
+  function formatReportMonthLabel(ym) {
+    var parts = String(ym || "").split("-");
+    if (parts.length !== 2) return String(ym || "");
+    var dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1);
+    if (isNaN(dt.getTime())) return String(ym || "");
+    return dt.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  }
+
+  function classifyAppointmentOutcome(row, todayStr) {
+    var status = row && row.status ? String(row.status) : "Pending";
+    var dateStr = row && row.appointment_date ? String(row.appointment_date).slice(0, 10) : "";
+    if (status === "Completed") return "completed";
+    if (status === "Cancelled") return "cancelled";
+    if (dateStr && dateStr < todayStr) return "no_show";
+    if (status === "Confirmed") return "confirmed";
+    return "pending";
+  }
+
+  function formatOutcomeCsvLabel(bucket) {
+    if (bucket === "completed") return "Completed";
+    if (bucket === "confirmed") return "Confirmed (Active)";
+    if (bucket === "pending") return "Pending (Active)";
+    if (bucket === "cancelled") return "Cancelled";
+    return "Past Unattended (Likely No-Show)";
+  }
+
+  function getWeekdayInfoByDow(dow) {
+    for (var i = 0; i < REPORT_WEEKDAYS.length; i++) {
+      if (REPORT_WEEKDAYS[i].dow === dow) return REPORT_WEEKDAYS[i];
+    }
+    return null;
+  }
+
+  function updateReportPresetButtons() {
+    var activeCls =
+      "rounded-lg border border-brand-600 bg-brand-600 text-white px-2.5 py-1.5 text-xs font-bold shadow-sm transition cursor-pointer";
+    var idleCls =
+      "rounded-lg border border-slate-200 bg-slate-50 hover:bg-brand-50 hover:border-brand-300 text-slate-700 px-2.5 py-1.5 text-xs font-bold transition cursor-pointer";
+
+    document.querySelectorAll("[data-report-preset]").forEach(function (btn) {
+      var key = btn.getAttribute("data-report-preset");
+      btn.className = key === reportState.preset ? activeCls : idleCls;
+    });
+  }
+
+  function invalidateReportCache() {
+    if (!reportState.loaded) return;
+    if (activeTab === "reports" && !reportState.loading) {
+      loadReportData(true);
+    } else {
+      reportState.loaded = false;
+    }
+  }
+
+  function applyReportPreset(presetKey, silent) {
+    var today = todayIso();
+    var fromVal = today;
+    var toVal = today;
+
+    if (presetKey === "today") {
+      fromVal = today;
+      toVal = today;
+    } else if (presetKey === "7d") {
+      fromVal = addDaysIso(today, -6);
+      toVal = today;
+    } else if (presetKey === "last_month") {
+      var prev = getMonthRangeIso(-1);
+      fromVal = prev.from;
+      toVal = prev.to;
+    } else if (presetKey === "90d") {
+      fromVal = addDaysIso(today, -89);
+      toVal = today;
+    } else {
+      presetKey = "this_month";
+      var cur = getMonthRangeIso(0);
+      fromVal = cur.from;
+      toVal = cur.to;
+    }
+
+    reportState.preset = presetKey;
+    reportState.from = fromVal;
+    reportState.to = toVal;
+
+    if ($("reportFromDate")) $("reportFromDate").value = fromVal;
+    if ($("reportToDate")) $("reportToDate").value = toVal;
+    updateReportPresetButtons();
+
+    return loadReportData(!!silent);
+  }
+
+  function loadReportData(silent) {
+    if (!window.supabaseClient) return Promise.resolve();
+    if (!reportState.from || !reportState.to) {
+      return applyReportPreset("this_month", !!silent);
+    }
+
+    var reqId = ++reportRequestSeq;
+    reportState.loading = true;
+
+    var loader = $("reportLoadingState");
+    var applyBtn = $("reportApplyBtn");
+    var icon = $("refreshIcon");
+    if (loader && !silent) loader.classList.remove("hidden");
+    if (applyBtn && !silent) {
+      applyBtn.disabled = true;
+      applyBtn.textContent = "Loading…";
+    }
+    if (icon && !silent) icon.classList.add("animate-spin");
+
+    var fromIso = reportState.from;
+    var toIso = reportState.to;
+
+    function fetchChunk(offset, acc) {
+      return window.supabaseClient
+        .from("appointments")
+        .select("id, serial_no, patient_name, patient_phone, doctor_name, department, appointment_date, status, notes, created_at")
+        .gte("appointment_date", fromIso)
+        .lte("appointment_date", toIso)
+        .order("appointment_date", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + REPORT_PAGE_SIZE - 1)
+        .then(function (res) {
+          if (res.error) {
+            throw new Error(res.error.message || "Failed to load report data.");
+          }
+          var batch = Array.isArray(res.data) ? res.data : [];
+          var combined = acc.concat(batch);
+          if (batch.length === REPORT_PAGE_SIZE && combined.length < REPORT_MAX_ROWS) {
+            return fetchChunk(offset + REPORT_PAGE_SIZE, combined);
+          }
+          return {
+            rows: combined,
+            hitLimit: combined.length >= REPORT_MAX_ROWS && batch.length === REPORT_PAGE_SIZE
+          };
+        });
+    }
+
+    return fetchChunk(0, [])
+      .then(function (result) {
+        if (reqId !== reportRequestSeq) return;
+        setDbError("");
+        reportState.rows = result.rows;
+        reportState.loaded = true;
+        reportState.hitLimit = !!result.hitLimit;
+        renderReports();
+      })
+      .catch(function (err) {
+        if (reqId !== reportRequestSeq) return;
+        var msg = (err && err.message) || "Failed to load analytics report.";
+        setDbError(msg);
+        showToast(msg, true);
+      })
+      .finally(function () {
+        if (reqId !== reportRequestSeq) return;
+        reportState.loading = false;
+        if (loader) loader.classList.add("hidden");
+        if (applyBtn) {
+          applyBtn.disabled = false;
+          applyBtn.textContent = "Apply Range";
+        }
+        if (icon) icon.classList.remove("animate-spin");
+      });
+  }
+
+  function computeReportMetrics(rows) {
+    var list = Array.isArray(rows) ? rows : [];
+    var today = todayIso();
+    var todayInRange = reportState.from && reportState.to && reportState.from <= today && today <= reportState.to;
+    var spanDays = diffDaysInclusive(reportState.from || today, reportState.to || today);
+    var trendMode = spanDays <= 35 ? "daily" : "monthly";
+
+    var total = list.length;
+    var completed = 0;
+    var confirmed = 0;
+    var pending = 0;
+    var cancelled = 0;
+    var noShow = 0;
+
+    var uniqueDatesMap = {};
+    var weekdayMap = {};
+    REPORT_WEEKDAYS.forEach(function (w) {
+      weekdayMap[w.dow] = {
+        dow: w.dow,
+        en: w.en,
+        bn: w.bn,
+        shortLabel: w.shortLabel,
+        count: 0,
+        uniqueDates: {},
+        pct: 0,
+        uniqueDays: 0,
+        avgPerDay: "0",
+        isPeak: false
+      };
+    });
+
+    var trendMap = {};
+    var doctorMap = {};
+
+    // Pre-count Today's serials from todayQueueAppointments when Today lies outside the selected range
+    var liveTodayByDocKey = {};
+    if (!todayInRange && Array.isArray(todayQueueAppointments)) {
+      todayQueueAppointments.forEach(function (tRow) {
+        var dName = (tRow.doctor_name || "Duty Doctor").trim();
+        var dKey = dName.toLowerCase();
+        liveTodayByDocKey[dKey] = (liveTodayByDocKey[dKey] || 0) + 1;
+      });
+    }
+
+    list.forEach(function (row) {
+      var dateStr = row && row.appointment_date ? String(row.appointment_date).slice(0, 10) : "";
+      var outcome = classifyAppointmentOutcome(row, today);
+
+      if (outcome === "completed") completed++;
+      else if (outcome === "confirmed") confirmed++;
+      else if (outcome === "pending") pending++;
+      else if (outcome === "cancelled") cancelled++;
+      else noShow++;
+
+      if (dateStr) {
+        uniqueDatesMap[dateStr] = true;
+        var dt = parseIsoDateLocal(dateStr);
+        if (dt) {
+          var wd = weekdayMap[dt.getDay()];
+          if (wd) {
+            wd.count++;
+            wd.uniqueDates[dateStr] = true;
+          }
+        }
+
+        var bucketKey = trendMode === "daily" ? dateStr : dateStr.slice(0, 7);
+        if (!trendMap[bucketKey]) {
+          trendMap[bucketKey] = {
+            key: bucketKey,
+            label: trendMode === "daily" ? formatReportShortDate(bucketKey) : formatReportMonthLabel(bucketKey),
+            isToday: trendMode === "daily" && bucketKey === today,
+            total: 0,
+            completed: 0,
+            active: 0,
+            cancelled: 0,
+            noShow: 0,
+            completionPct: 0
+          };
+        }
+        var tb = trendMap[bucketKey];
+        tb.total++;
+        if (outcome === "completed") tb.completed++;
+        else if (outcome === "confirmed" || outcome === "pending") tb.active++;
+        else if (outcome === "cancelled") tb.cancelled++;
+        else tb.noShow++;
+      }
+
+      var rawDoc = (row && row.doctor_name ? String(row.doctor_name) : "").trim() || "Duty Doctor";
+      var docKey = rawDoc.toLowerCase();
+      if (!doctorMap[docKey]) {
+        doctorMap[docKey] = {
+          key: docKey,
+          nameEn: rawDoc,
+          nameBn: lookupBanglaDoctorName(rawDoc),
+          department: (row && row.department ? String(row.department).trim() : ""),
+          todayCount: todayInRange ? 0 : (liveTodayByDocKey[docKey] || 0),
+          total: 0,
+          sharePct: 0,
+          completed: 0,
+          active: 0,
+          cancelled: 0,
+          noShow: 0,
+          cancelNoShow: 0,
+          completionPct: 0,
+          cancelPct: 0
+        };
+      }
+      var dObj = doctorMap[docKey];
+      if (!dObj.department && row && row.department) {
+        dObj.department = String(row.department).trim();
+      }
+      dObj.total++;
+      if (todayInRange && dateStr === today) {
+        dObj.todayCount++;
+      }
+      if (outcome === "completed") dObj.completed++;
+      else if (outcome === "confirmed" || outcome === "pending") dObj.active++;
+      else if (outcome === "cancelled") dObj.cancelled++;
+      else dObj.noShow++;
+    });
+
+    var active = confirmed + pending;
+    var cancelNoShow = cancelled + noShow;
+    var completionPct = total ? Math.round((completed / total) * 100) : 0;
+    var cancelNoShowPct = total ? Math.round((cancelNoShow / total) * 100) : 0;
+    var activeDays = Object.keys(uniqueDatesMap).length;
+    var avgPerActiveDay = activeDays ? (total / activeDays).toFixed(1) : "0";
+
+    // Finalize Weekdays (Sat -> Fri)
+    var maxWeekdayCount = 0;
+    var weekdays = REPORT_WEEKDAYS.map(function (w) {
+      var item = weekdayMap[w.dow];
+      item.uniqueDays = Object.keys(item.uniqueDates).length;
+      item.pct = total ? Math.round((item.count / total) * 100) : 0;
+      item.avgPerDay = item.uniqueDays ? (item.count / item.uniqueDays).toFixed(1) : "0";
+      if (item.count > maxWeekdayCount) maxWeekdayCount = item.count;
+      return item;
+    });
+    var peakWeekday = null;
+    if (maxWeekdayCount > 0) {
+      weekdays.forEach(function (w) {
+        if (w.count === maxWeekdayCount) {
+          w.isPeak = true;
+          if (!peakWeekday) peakWeekday = w;
+        }
+      });
+    }
+
+    // Finalize Trend Buckets (fill empty days for short <= 14-day spans so gaps are visible)
+    if (trendMode === "daily" && spanDays <= 14 && reportState.from && reportState.to) {
+      for (var dIdx = 0; dIdx < spanDays; dIdx++) {
+        var dayIso = addDaysIso(reportState.from, dIdx);
+        if (!trendMap[dayIso]) {
+          trendMap[dayIso] = {
+            key: dayIso,
+            label: formatReportShortDate(dayIso),
+            isToday: dayIso === today,
+            total: 0,
+            completed: 0,
+            active: 0,
+            cancelled: 0,
+            noShow: 0,
+            completionPct: 0
+          };
+        }
+      }
+    }
+
+    var trendBuckets = Object.keys(trendMap)
+      .sort()
+      .map(function (k) {
+        var b = trendMap[k];
+        b.completionPct = b.total ? Math.round((b.completed / b.total) * 100) : 0;
+        return b;
+      });
+
+    var peakTrendBucket = null;
+    trendBuckets.forEach(function (b) {
+      if (b.total > 0 && (!peakTrendBucket || b.total > peakTrendBucket.total)) {
+        peakTrendBucket = b;
+      }
+    });
+
+    // Finalize Doctor-wise Breakdown
+    var doctors = Object.keys(doctorMap)
+      .map(function (k) {
+        var d = doctorMap[k];
+        d.cancelNoShow = d.cancelled + d.noShow;
+        d.sharePct = total ? Math.round((d.total / total) * 100) : 0;
+        d.completionPct = d.total ? Math.round((d.completed / d.total) * 100) : 0;
+        d.cancelPct = d.total ? Math.round((d.cancelNoShow / d.total) * 100) : 0;
+        return d;
+      })
+      .sort(function (a, b) {
+        if (b.total !== a.total) return b.total - a.total;
+        if (b.todayCount !== a.todayCount) return b.todayCount - a.todayCount;
+        return a.nameEn.localeCompare(b.nameEn);
+      });
+
+    return {
+      total: total,
+      completed: completed,
+      confirmed: confirmed,
+      pending: pending,
+      active: active,
+      cancelled: cancelled,
+      noShow: noShow,
+      cancelNoShow: cancelNoShow,
+      completionPct: completionPct,
+      cancelNoShowPct: cancelNoShowPct,
+      activeDays: activeDays,
+      avgPerActiveDay: avgPerActiveDay,
+      spanDays: spanDays,
+      trendMode: trendMode,
+      weekdays: weekdays,
+      maxWeekdayCount: maxWeekdayCount,
+      peakWeekday: peakWeekday,
+      trendBuckets: trendBuckets,
+      peakTrendBucket: peakTrendBucket,
+      doctors: doctors
+    };
+  }
+
+  function renderReports() {
+    var metrics = computeReportMetrics(reportState.rows);
+    var rangeLabel =
+      reportState.from === reportState.to
+        ? reportState.from
+        : reportState.from + " → " + reportState.to;
+
+    var metaEl = $("reportRangeMeta");
+    if (metaEl) {
+      metaEl.textContent =
+        rangeLabel +
+        " · " +
+        metrics.total +
+        " serial" +
+        (metrics.total === 1 ? "" : "s") +
+        " analyzed" +
+        (reportState.hitLimit ? " (capped at " + REPORT_MAX_ROWS + " rows — narrow range for full count)" : "");
+    }
+
+    // 1. Executive KPI Cards
+    if ($("repTotal")) $("repTotal").textContent = String(metrics.total);
+    if ($("repAvgPerDay")) {
+      $("repAvgPerDay").textContent = metrics.activeDays
+        ? metrics.avgPerActiveDay + " / active day (" + metrics.activeDays + "d)"
+        : "0 / active day";
+    }
+    if ($("repCompletionRate")) $("repCompletionRate").textContent = metrics.completionPct + "%";
+    if ($("repCompletedSub")) {
+      $("repCompletedSub").textContent =
+        metrics.completed + " completed" + (metrics.active ? " · " + metrics.active + " active" : "");
+    }
+    if ($("repCancelRate")) $("repCancelRate").textContent = metrics.cancelNoShowPct + "%";
+    if ($("repCancelSub")) {
+      $("repCancelSub").textContent =
+        metrics.cancelled + " cancelled · " + metrics.noShow + " unattended";
+    }
+    if ($("repPeakDay")) {
+      $("repPeakDay").textContent = metrics.peakWeekday ? metrics.peakWeekday.shortLabel : "—";
+    }
+    if ($("repPeakDaySub")) {
+      $("repPeakDaySub").textContent = metrics.peakWeekday
+        ? metrics.peakWeekday.count +
+          " serials (" +
+          metrics.peakWeekday.pct +
+          "% · avg " +
+          metrics.peakWeekday.avgPerDay +
+          "/day)"
+        : "No bookings yet";
+    }
+
+    // 2. Outcome Breakdown Bar & Legend
+    if ($("repOutcomeTotalPill")) {
+      $("repOutcomeTotalPill").textContent = metrics.total + " total";
+    }
+    var outcomeItems = [
+      {
+        label: "Completed (চেম্বার সম্পন্ন)",
+        sub: "Visited & marked Completed",
+        count: metrics.completed,
+        barCls: "bg-emerald-500",
+        dotCls: "bg-emerald-500",
+        textCls: "text-emerald-700"
+      },
+      {
+        label: "Active / Upcoming (চলমান)",
+        sub: metrics.confirmed + " confirmed · " + metrics.pending + " pending (today & future)",
+        count: metrics.active,
+        barCls: "bg-brand-500",
+        dotCls: "bg-brand-500",
+        textCls: "text-brand-700"
+      },
+      {
+        label: "Cancelled (বাতিল)",
+        sub: "Explicitly marked Cancelled",
+        count: metrics.cancelled,
+        barCls: "bg-rose-500",
+        dotCls: "bg-rose-500",
+        textCls: "text-rose-700"
+      },
+      {
+        label: "Past Unattended / No-Show",
+        sub: "Past date still Pending or Confirmed",
+        count: metrics.noShow,
+        barCls: "bg-amber-500",
+        dotCls: "bg-amber-500",
+        textCls: "text-amber-700"
+      }
+    ];
+
+    var barEl = $("repOutcomeBar");
+    if (barEl) {
+      if (!metrics.total) {
+        barEl.innerHTML = '<div class="w-full h-full bg-slate-100"></div>';
+      } else {
+        barEl.innerHTML = outcomeItems
+          .filter(function (item) { return item.count > 0; })
+          .map(function (item) {
+            var widthPct = ((item.count / metrics.total) * 100).toFixed(2);
+            return (
+              '<div class="' + item.barCls + ' h-full transition-all duration-300" ' +
+              'style="width:' + widthPct + '%" ' +
+              'title="' + escapeHtml(item.label + ": " + item.count + " (" + Math.round((item.count / metrics.total) * 100) + "%)") + '"></div>'
+            );
+          })
+          .join("");
+      }
+    }
+
+    var legendEl = $("repOutcomeLegend");
+    if (legendEl) {
+      legendEl.innerHTML = outcomeItems
+        .map(function (item) {
+          var pct = metrics.total ? Math.round((item.count / metrics.total) * 100) : 0;
+          return (
+            '<div class="flex items-center justify-between gap-2 min-w-0">' +
+              '<div class="flex items-start gap-2 min-w-0">' +
+                '<span class="w-2.5 h-2.5 rounded-full ' + item.dotCls + ' shrink-0 mt-1"></span>' +
+                '<div class="min-w-0">' +
+                  '<p class="font-bold text-slate-800 leading-tight truncate">' + escapeHtml(item.label) + "</p>" +
+                  '<p class="text-[11px] text-slate-500 leading-tight mt-0.5 truncate">' + escapeHtml(item.sub) + "</p>" +
+                "</div>" +
+              "</div>" +
+              '<div class="text-right shrink-0 whitespace-nowrap">' +
+                '<span class="font-extrabold ' + item.textCls + '">' + item.count + "</span>" +
+                '<span class="text-slate-400 text-xs font-semibold ml-1">(' + pct + "%)</span>" +
+              "</div>" +
+            "</div>"
+          );
+        })
+        .join("");
+    }
+
+    // 3. Peak Chamber Days (Sat -> Fri)
+    var peakBadge = $("repPeakBadge");
+    if (peakBadge) {
+      if (metrics.peakWeekday) {
+        peakBadge.textContent = "🔥 Peak: " + metrics.peakWeekday.shortLabel;
+        peakBadge.classList.remove("hidden");
+      } else {
+        peakBadge.classList.add("hidden");
+      }
+    }
+
+    var weekdayEl = $("repWeekdayBars");
+    if (weekdayEl) {
+      weekdayEl.innerHTML = metrics.weekdays
+        .map(function (w) {
+          var barPct = metrics.maxWeekdayCount ? Math.round((w.count / metrics.maxWeekdayCount) * 100) : 0;
+          var barFill = w.isPeak ? "bg-emerald-500" : w.count > 0 ? "bg-brand-500" : "bg-slate-200";
+          var labelCls = w.isPeak ? "font-extrabold text-emerald-800" : "font-semibold text-slate-700";
+          return (
+            '<div class="grid grid-cols-[88px_1fr_76px] sm:grid-cols-[106px_1fr_92px] items-center gap-2 text-xs">' +
+              '<span class="' + labelCls + ' truncate">' + escapeHtml(w.shortLabel) + "</span>" +
+              '<div class="h-3 rounded-full bg-slate-100 overflow-hidden">' +
+                '<div class="h-full rounded-full ' + barFill + ' transition-all duration-300" style="width:' + barPct + '%"></div>' +
+              "</div>" +
+              '<span class="text-right font-bold ' + (w.isPeak ? "text-emerald-700" : "text-slate-700") + ' whitespace-nowrap">' +
+                w.count +
+                ' <span class="text-[11px] font-medium text-slate-400">(' + w.pct + "%)</span>" +
+              "</span>" +
+            "</div>"
+          );
+        })
+        .join("");
+    }
+
+    // 4. Daily / Monthly Volume Trend
+    var isMonthly = metrics.trendMode === "monthly";
+    if ($("repTrendTitle")) {
+      $("repTrendTitle").textContent = isMonthly
+        ? "Monthly Patient Volume Trend (মাসিক সিরিয়াল প্রবণতা)"
+        : "Daily Patient Volume Trend (দৈনিক সিরিয়াল প্রবণতা)";
+    }
+    if ($("repTrendSub")) {
+      $("repTrendSub").textContent = isMonthly
+        ? "Month-by-month volume across " + metrics.spanDays + "-day range (Emerald: Completed · Blue: Active · Red/Amber: Cancel/No-Show)"
+        : "Day-by-day volume across " + metrics.spanDays + "-day range (Emerald: Completed · Blue: Active · Red/Amber: Cancel/No-Show)";
+    }
+
+    var trendPeakPill = $("repTrendPeakPill");
+    if (trendPeakPill) {
+      if (metrics.peakTrendBucket) {
+        trendPeakPill.textContent =
+          "Peak: " + metrics.peakTrendBucket.label + " (" + metrics.peakTrendBucket.total + ")";
+        trendPeakPill.classList.remove("hidden");
+      } else {
+        trendPeakPill.classList.add("hidden");
+      }
+    }
+
+    var trendBarsEl = $("repTrendBars");
+    if (trendBarsEl) {
+      if (!metrics.trendBuckets.length || !metrics.total) {
+        trendBarsEl.innerHTML =
+          '<p class="text-xs text-slate-500 py-4 text-center">No serial volume recorded for this period yet.</p>';
+      } else {
+        var maxTrend = 0;
+        metrics.trendBuckets.forEach(function (b) {
+          if (b.total > maxTrend) maxTrend = b.total;
+        });
+
+        trendBarsEl.innerHTML = metrics.trendBuckets
+          .map(function (b) {
+            var totalWidth = maxTrend ? ((b.total / maxTrend) * 100).toFixed(2) : "0";
+            var compW = b.total ? ((b.completed / b.total) * 100).toFixed(2) : "0";
+            var actW = b.total ? ((b.active / b.total) * 100).toFixed(2) : "0";
+            var canW = b.total ? ((b.cancelled / b.total) * 100).toFixed(2) : "0";
+            var nsW = b.total ? ((b.noShow / b.total) * 100).toFixed(2) : "0";
+            var isPeakBar = metrics.peakTrendBucket && b.key === metrics.peakTrendBucket.key;
+            var rowTitle =
+              b.label +
+              ": " +
+              b.total +
+              " total (" +
+              b.completed +
+              " completed, " +
+              b.active +
+              " active, " +
+              b.cancelled +
+              " cancelled, " +
+              b.noShow +
+              " unattended)";
+
+            return (
+              '<div class="grid grid-cols-[108px_1fr_44px] sm:grid-cols-[136px_1fr_80px] items-center gap-2 text-xs" title="' + escapeHtml(rowTitle) + '">' +
+                '<div class="min-w-0 flex items-center gap-1">' +
+                  '<span class="' + (isPeakBar ? "font-extrabold text-brand-900" : "font-semibold text-slate-700") + ' truncate">' +
+                    escapeHtml(b.label) +
+                  "</span>" +
+                  (b.isToday
+                    ? '<span class="rounded bg-brand-100 text-brand-800 text-[9px] font-extrabold px-1 py-0.5 shrink-0">TODAY</span>'
+                    : "") +
+                "</div>" +
+                '<div class="h-3 rounded-full bg-slate-100 overflow-hidden">' +
+                  (b.total > 0
+                    ? '<div class="h-full rounded-full overflow-hidden flex transition-all duration-300" style="width:' + totalWidth + '%">' +
+                        (b.completed ? '<div class="bg-emerald-500 h-full" style="width:' + compW + '%"></div>' : "") +
+                        (b.active ? '<div class="bg-brand-500 h-full" style="width:' + actW + '%"></div>' : "") +
+                        (b.cancelled ? '<div class="bg-rose-500 h-full" style="width:' + canW + '%"></div>' : "") +
+                        (b.noShow ? '<div class="bg-amber-400 h-full" style="width:' + nsW + '%"></div>' : "") +
+                      "</div>"
+                    : "") +
+                "</div>" +
+                '<span class="text-right font-bold ' + (b.total ? "text-slate-800" : "text-slate-400") + ' whitespace-nowrap">' +
+                  b.total +
+                  (b.total > 0 ? '<span class="hidden sm:inline text-[11px] font-medium text-emerald-700 ml-1">' + b.completionPct + "%</span>" : "") +
+                "</span>" +
+              "</div>"
+            );
+          })
+          .join("");
+      }
+    }
+
+    // 5. Doctor-Wise Breakdown (Mobile Cards + Desktop Table)
+    var docCountPill = $("repDoctorCountPill");
+    if (docCountPill) {
+      docCountPill.textContent =
+        metrics.doctors.length + " doctor" + (metrics.doctors.length === 1 ? "" : "s");
+    }
+
+    var cardsEl = $("repDoctorCards");
+    var tbodyEl = $("repDoctorTbody");
+    var emptyEl = $("repEmptyState");
+
+    if (!metrics.doctors.length) {
+      if (cardsEl) cardsEl.innerHTML = "";
+      if (tbodyEl) tbodyEl.innerHTML = "";
+      if (emptyEl) emptyEl.classList.remove("hidden");
+      return;
+    }
+
+    if (emptyEl) emptyEl.classList.add("hidden");
+
+    if (tbodyEl) {
+      tbodyEl.innerHTML = metrics.doctors
+        .map(function (d, idx) {
+          var rateColor =
+            d.completionPct >= 75
+              ? "text-emerald-700"
+              : d.completionPct >= 45
+                ? "text-brand-700"
+                : "text-amber-700";
+          var rateBar =
+            d.completionPct >= 75
+              ? "bg-emerald-500"
+              : d.completionPct >= 45
+                ? "bg-brand-500"
+                : "bg-amber-500";
+          var cnsNote = d.cancelNoShow
+            ? '<div class="text-[10px] text-slate-400 font-medium">' + d.cancelled + "c · " + d.noShow + "ns</div>"
+            : "";
+
+          return (
+            '<tr class="hover:bg-brand-50/35 transition">' +
+              '<td class="py-3 px-4 align-middle">' +
+                '<div class="flex items-start gap-2.5">' +
+                  '<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-slate-100 text-slate-600 text-xs font-extrabold shrink-0 mt-0.5">' +
+                    (idx + 1) +
+                  "</span>" +
+                  '<div class="min-w-0">' +
+                    '<p class="font-bold text-slate-900 leading-snug">' + escapeHtml(d.nameBn || d.nameEn) + "</p>" +
+                    (d.nameBn ? '<p class="text-xs text-slate-500 leading-snug">' + escapeHtml(d.nameEn) + "</p>" : "") +
+                    (d.department
+                      ? '<span class="inline-block mt-1 rounded-full bg-brand-50 text-brand-800 border border-brand-100 px-2 py-0.5 text-[10px] font-bold">' +
+                          escapeHtml(d.department) +
+                        "</span>"
+                      : "") +
+                  "</div>" +
+                "</div>" +
+              "</td>" +
+              '<td class="py-3 px-3 text-center align-middle whitespace-nowrap">' +
+                (d.todayCount > 0
+                  ? '<span class="inline-flex items-center justify-center rounded-full bg-brand-50 border border-brand-200 text-brand-800 px-2.5 py-0.5 text-xs font-extrabold">' +
+                      d.todayCount +
+                    "</span>"
+                  : '<span class="text-xs font-semibold text-slate-400">0</span>') +
+              "</td>" +
+              '<td class="py-3 px-3 text-center align-middle whitespace-nowrap">' +
+                '<div class="font-extrabold text-slate-900">' + d.total + "</div>" +
+                '<div class="text-[10px] text-slate-400 font-semibold">' + d.sharePct + "% share</div>" +
+              "</td>" +
+              '<td class="py-3 px-3 text-center align-middle font-bold text-emerald-700 whitespace-nowrap">' +
+                d.completed +
+              "</td>" +
+              '<td class="py-3 px-3 text-center align-middle font-bold text-brand-700 whitespace-nowrap">' +
+                d.active +
+              "</td>" +
+              '<td class="py-3 px-3 text-center align-middle whitespace-nowrap">' +
+                '<div class="font-bold ' + (d.cancelNoShow > 0 ? "text-rose-600" : "text-slate-400") + '">' +
+                  d.cancelNoShow +
+                "</div>" +
+                cnsNote +
+              "</td>" +
+              '<td class="py-3 px-4 text-right align-middle whitespace-nowrap">' +
+                '<div class="inline-flex flex-col items-end gap-1">' +
+                  '<span class="font-extrabold text-xs ' + rateColor + '">' + d.completionPct + "%</span>" +
+                  '<div class="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden">' +
+                    '<div class="h-full rounded-full ' + rateBar + '" style="width:' + d.completionPct + '%"></div>' +
+                  "</div>" +
+                "</div>" +
+              "</td>" +
+            "</tr>"
+          );
+        })
+        .join("");
+    }
+
+    if (cardsEl) {
+      cardsEl.innerHTML = metrics.doctors
+        .map(function (d, idx) {
+          var rateBar =
+            d.completionPct >= 75
+              ? "bg-emerald-500"
+              : d.completionPct >= 45
+                ? "bg-brand-500"
+                : "bg-amber-500";
+          return (
+            '<article class="p-3.5 space-y-2.5 bg-white">' +
+              '<div class="flex items-start justify-between gap-2 min-w-0">' +
+                '<div class="flex items-start gap-2 min-w-0">' +
+                  '<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-slate-100 text-slate-700 text-xs font-extrabold shrink-0 mt-0.5">' +
+                    (idx + 1) +
+                  "</span>" +
+                  '<div class="min-w-0">' +
+                    '<p class="font-bold text-slate-900 text-sm leading-snug break-words">' + escapeHtml(d.nameBn || d.nameEn) + "</p>" +
+                    (d.nameBn ? '<p class="text-[11px] text-slate-500 leading-snug break-words">' + escapeHtml(d.nameEn) + "</p>" : "") +
+                    (d.department
+                      ? '<span class="inline-block mt-1 rounded-full bg-brand-50 text-brand-800 px-2 py-0.5 text-[10px] font-bold">' +
+                          escapeHtml(d.department) +
+                        "</span>"
+                      : "") +
+                  "</div>" +
+                "</div>" +
+                '<div class="text-right shrink-0">' +
+                  '<span class="inline-block rounded-lg bg-slate-900 text-white px-2 py-0.5 text-xs font-extrabold">' +
+                    d.total + " total" +
+                  "</span>" +
+                  '<p class="text-[10px] font-bold text-brand-700 mt-1">Today: ' + d.todayCount + "</p>" +
+                "</div>" +
+              "</div>" +
+
+              '<div class="grid grid-cols-4 gap-1.5 text-center rounded-xl bg-slate-50 border border-slate-100 p-2">' +
+                '<div>' +
+                  '<p class="text-[10px] font-semibold text-slate-500">Done</p>' +
+                  '<p class="text-xs font-extrabold text-emerald-700">' + d.completed + "</p>" +
+                "</div>" +
+                '<div>' +
+                  '<p class="text-[10px] font-semibold text-slate-500">Active</p>' +
+                  '<p class="text-xs font-extrabold text-brand-700">' + d.active + "</p>" +
+                "</div>" +
+                '<div>' +
+                  '<p class="text-[10px] font-semibold text-slate-500">Cancel/NS</p>' +
+                  '<p class="text-xs font-extrabold ' + (d.cancelNoShow ? "text-rose-600" : "text-slate-400") + '">' + d.cancelNoShow + "</p>" +
+                "</div>" +
+                '<div>' +
+                  '<p class="text-[10px] font-semibold text-slate-500">Rate</p>' +
+                  '<p class="text-xs font-extrabold text-slate-900">' + d.completionPct + "%</p>" +
+                "</div>" +
+              "</div>" +
+
+              '<div class="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">' +
+                '<div class="h-full rounded-full ' + rateBar + '" style="width:' + d.completionPct + '%"></div>' +
+              "</div>" +
+            "</article>"
+          );
+        })
+        .join("");
+    }
+  }
+
+  function downloadCsvLines(lines, filename, toastMessage) {
+    var csvContent = "\uFEFF" + lines.join("\r\n");
+    var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob);
+
+    var link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
+
+    if (toastMessage) showToast(toastMessage, "success");
+  }
+
+  function exportReportSummaryCsv() {
+    if (reportState.loading) {
+      showToast("Please wait for the report to finish loading…");
+      return;
+    }
+    if (!reportState.rows.length) {
+      showToast("No appointments in this date range to export.", true);
+      return;
+    }
+
+    var metrics = computeReportMetrics(reportState.rows);
+    var generatedAt = new Date().toLocaleString("en-GB", { hour12: true });
+    var lines = [];
+
+    lines.push([csvCell("Delta Medical Center & Mother and Child Hospital — Management Summary Report")].join(","));
+    lines.push([csvCell("Report Period"), csvCell(reportState.from + " to " + reportState.to)].join(","));
+    lines.push([csvCell("Generated At"), csvCell(generatedAt)].join(","));
+    lines.push("");
+
+    lines.push([csvCell("EXECUTIVE OVERVIEW"), csvCell("Value"), csvCell("Details")].join(","));
+    lines.push([csvCell("Total Serials"), csvCell(metrics.total), csvCell(metrics.avgPerActiveDay + " / active day across " + metrics.activeDays + " active days")].join(","));
+    lines.push([csvCell("Completed"), csvCell(metrics.completed), csvCell(metrics.completionPct + "% completion rate")].join(","));
+    lines.push([csvCell("Active / Upcoming"), csvCell(metrics.active), csvCell(metrics.confirmed + " confirmed, " + metrics.pending + " pending")].join(","));
+    lines.push([csvCell("Cancelled"), csvCell(metrics.cancelled), csvCell("Explicitly cancelled")].join(","));
+    lines.push([csvCell("Past Unattended (Likely No-Show)"), csvCell(metrics.noShow), csvCell("Past date not marked Completed or Cancelled")].join(","));
+    lines.push([csvCell("Combined Cancel / No-Show Rate"), csvCell(metrics.cancelNoShowPct + "%"), csvCell(metrics.cancelNoShow + " of " + metrics.total + " serials")].join(","));
+    lines.push([
+      csvCell("Peak Chamber Day"),
+      csvCell(metrics.peakWeekday ? metrics.peakWeekday.en + " (" + metrics.peakWeekday.bn + ")" : "N/A"),
+      csvCell(metrics.peakWeekday ? metrics.peakWeekday.count + " serials (" + metrics.peakWeekday.pct + "%, avg " + metrics.peakWeekday.avgPerDay + "/day)" : "")
+    ].join(","));
+    lines.push("");
+
+    lines.push([csvCell("DOCTOR-WISE PATIENT BREAKDOWN")].join(","));
+    lines.push([
+      "Rank",
+      "Doctor (English)",
+      "Doctor (Bangla)",
+      "Department",
+      "Today",
+      "Period Total",
+      "Load Share %",
+      "Completed",
+      "Active (Pend/Conf)",
+      "Cancelled",
+      "Past Unattended (No-Show)",
+      "Completion %",
+      "Cancel/No-Show %"
+    ].map(csvCell).join(","));
+
+    metrics.doctors.forEach(function (d, idx) {
+      lines.push([
+        csvCell(idx + 1),
+        csvCell(d.nameEn),
+        csvCell(d.nameBn || ""),
+        csvCell(d.department || ""),
+        csvCell(d.todayCount),
+        csvCell(d.total),
+        csvCell(d.sharePct + "%"),
+        csvCell(d.completed),
+        csvCell(d.active),
+        csvCell(d.cancelled),
+        csvCell(d.noShow),
+        csvCell(d.completionPct + "%"),
+        csvCell(d.cancelPct + "%")
+      ].join(","));
+    });
+    lines.push("");
+
+    lines.push([csvCell("PEAK CHAMBER DAYS (SATURDAY - FRIDAY)")].join(","));
+    lines.push([
+      "Day (English)",
+      "Day (Bangla)",
+      "Total Serials",
+      "Share %",
+      "Active Dates",
+      "Avg / Active Day"
+    ].map(csvCell).join(","));
+
+    metrics.weekdays.forEach(function (w) {
+      lines.push([
+        csvCell(w.en),
+        csvCell(w.bn),
+        csvCell(w.count),
+        csvCell(w.pct + "%"),
+        csvCell(w.uniqueDays),
+        csvCell(w.avgPerDay)
+      ].join(","));
+    });
+    lines.push("");
+
+    lines.push([csvCell(metrics.trendMode === "monthly" ? "MONTHLY VOLUME TREND" : "DAILY VOLUME TREND")].join(","));
+    lines.push([
+      "Period",
+      "Total Serials",
+      "Completed",
+      "Active",
+      "Cancelled",
+      "Past Unattended",
+      "Completion %"
+    ].map(csvCell).join(","));
+
+    metrics.trendBuckets.forEach(function (b) {
+      lines.push([
+        csvCell(b.key + " (" + b.label + ")"),
+        csvCell(b.total),
+        csvCell(b.completed),
+        csvCell(b.active),
+        csvCell(b.cancelled),
+        csvCell(b.noShow),
+        csvCell(b.completionPct + "%")
+      ].join(","));
+    });
+
+    var filename = "Delta-Medical-Summary-Report-" + reportState.from + "-to-" + reportState.to + ".csv";
+    downloadCsvLines(lines, filename, "Downloaded management summary: " + filename);
+  }
+
+  function exportReportDetailedCsv() {
+    if (reportState.loading) {
+      showToast("Please wait for the report to finish loading…");
+      return;
+    }
+    if (!reportState.rows.length) {
+      showToast("No appointments in this date range to export.", true);
+      return;
+    }
+
+    var today = todayIso();
+    var headers = [
+      "Serial No",
+      "Date",
+      "Weekday",
+      "Patient Name",
+      "Phone Number",
+      "Doctor",
+      "Department",
+      "Status",
+      "Outcome Category",
+      "Notes",
+      "Booked At"
+    ];
+    var lines = [headers.map(csvCell).join(",")];
+
+    reportState.rows.forEach(function (row, idx) {
+      var dateStr = row && row.appointment_date ? String(row.appointment_date).slice(0, 10) : "";
+      var dt = parseIsoDateLocal(dateStr);
+      var wdInfo = dt ? getWeekdayInfoByDow(dt.getDay()) : null;
+      var bnDoc = lookupBanglaDoctorName(row.doctor_name);
+      var doctorDisplay = bnDoc ? row.doctor_name + " (" + bnDoc + ")" : (row.doctor_name || "");
+      var outcomeBucket = classifyAppointmentOutcome(row, today);
+
+      lines.push([
+        csvCell(getRowSerialCode(row, idx)),
+        csvCell(dateStr),
+        csvCell(wdInfo ? wdInfo.en : ""),
+        csvCell(row.patient_name),
+        csvPhoneFormula(row.patient_phone),
+        csvCell(doctorDisplay),
+        csvCell(row.department),
+        csvCell(row.status || "Pending"),
+        csvCell(formatOutcomeCsvLabel(outcomeBucket)),
+        csvCell(row.notes || ""),
+        csvCell(formatCreatedAt(row.created_at))
+      ].join(","));
+    });
+
+    var filename = "Delta-Medical-Full-Log-" + reportState.from + "-to-" + reportState.to + ".csv";
+    downloadCsvLines(
+      lines,
+      filename,
+      "Downloaded " + reportState.rows.length + " records to " + filename
+    );
+  }
+
   /* ------------ Auth Gate & Session Management ------------ */
   function applySessionView(session) {
     var boot = $("bootLoader");
@@ -2048,7 +3948,20 @@
       stopRealtimeSync();
       clearNewBookingAlerts();
       appointments = [];
+      todayQueueAppointments = [];
       doctorsList = [];
+      dataWindow = { mode: "recent", from: "", to: "", query: "", hitLimit: false };
+      reportRequestSeq++;
+      reportState = {
+        preset: "this_month",
+        from: "",
+        to: "",
+        rows: [],
+        loaded: false,
+        loading: false,
+        hitLimit: false
+      };
+      switchTab("appointments");
       dashView.classList.add("hidden");
       loginView.classList.remove("hidden");
     }
@@ -2179,6 +4092,11 @@
       incomingViewBtn.addEventListener("click", function () {
         clearNewBookingAlerts();
         switchTab("appointments");
+        if (dataWindow.mode === "archive") {
+          filters.date = "";
+          if ($("filterDate")) $("filterDate").value = "";
+          switchToRecentWindow(true);
+        }
         var tableCard = $("tableCard");
         if (tableCard) tableCard.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -2197,6 +4115,57 @@
       switchTab("doctors");
       loadDoctors(false);
     });
+    if ($("tabReportsBtn")) {
+      $("tabReportsBtn").addEventListener("click", function () {
+        switchTab("reports");
+        if (!reportState.loaded) {
+          if (reportState.from && reportState.to) {
+            loadReportData(false);
+          } else {
+            applyReportPreset(reportState.preset || "this_month", false);
+          }
+        } else {
+          renderReports();
+        }
+      });
+    }
+
+    // Reports & Analytics period presets, custom range, and CSV exports
+    document.querySelectorAll("[data-report-preset]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var presetKey = btn.getAttribute("data-report-preset");
+        applyReportPreset(presetKey, false);
+      });
+    });
+
+    var reportRangeForm = $("reportRangeForm");
+    if (reportRangeForm) {
+      reportRangeForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var today = todayIso();
+        var fromVal = ($("reportFromDate") && $("reportFromDate").value) || addDaysIso(today, -29);
+        var toVal = ($("reportToDate") && $("reportToDate").value) || today;
+        if (fromVal > toVal) {
+          var swap = fromVal;
+          fromVal = toVal;
+          toVal = swap;
+        }
+        reportState.preset = "custom";
+        reportState.from = fromVal;
+        reportState.to = toVal;
+        if ($("reportFromDate")) $("reportFromDate").value = fromVal;
+        if ($("reportToDate")) $("reportToDate").value = toVal;
+        updateReportPresetButtons();
+        loadReportData(false);
+      });
+    }
+
+    if ($("exportReportSummaryBtn")) {
+      $("exportReportSummaryBtn").addEventListener("click", exportReportSummaryCsv);
+    }
+    if ($("exportReportDetailedBtn")) {
+      $("exportReportDetailedBtn").addEventListener("click", exportReportDetailedCsv);
+    }
 
     // Top bar & Empty state buttons
     $("newSerialBtn").addEventListener("click", openCreateModal);
@@ -2204,7 +4173,13 @@
     $("refreshBtn").addEventListener("click", function () {
       clearNewBookingAlerts();
       loadAppointments(false);
+      if (dataWindow.mode === "archive") loadTodayQueueOnly();
       loadDoctors(false);
+      if (activeTab === "reports") {
+        loadReportData(false);
+      } else {
+        reportState.loaded = false;
+      }
     });
 
     // Quick-fill doctor preset inside Serial modal
@@ -2294,6 +4269,13 @@
     $("doctorModal").addEventListener("click", function (e) {
       if (e.target === $("doctorModal")) closeDoctorModal();
     });
+    $("doctorModal").addEventListener("close", resetDoctorPhotoState);
+    if ($("dPhotoInput")) {
+      $("dPhotoInput").addEventListener("change", handleDoctorPhotoInputChange);
+    }
+    if ($("dPhotoRemoveBtn")) {
+      $("dPhotoRemoveBtn").addEventListener("click", handleDoctorPhotoRemove);
+    }
     if ($("docDayQuickBtns")) {
       $("docDayQuickBtns").addEventListener("click", function (e) {
         var btn = e.target.closest("[data-day-pick]");
@@ -2330,13 +4312,30 @@
       renderTable();
     });
     $("filterDate").addEventListener("change", function (e) {
-      filters.date = e.target.value || "";
+      var picked = e.target.value || "";
+      filters.date = picked;
+      // Automatically fetch from Supabase Archive if user picks a date older than the 7-day recent window
+      if (picked && picked < getRecentWindowStartIso()) {
+        if ($("archiveFromDate")) $("archiveFromDate").value = picked;
+        if ($("archiveToDate")) $("archiveToDate").value = picked;
+        if ($("archiveQuery")) $("archiveQuery").value = "";
+        runArchiveSearch(picked, picked, "", "Loaded archived serials for " + picked);
+        return;
+      }
+      if (dataWindow.mode === "archive" && (!picked || picked >= getRecentWindowStartIso())) {
+        switchToRecentWindow(true);
+        return;
+      }
       renderTable();
     });
     $("filterTodayBtn").addEventListener("click", function () {
       var t = todayIso();
       filters.date = t;
       $("filterDate").value = t;
+      if (dataWindow.mode === "archive") {
+        switchToRecentWindow(true);
+        return;
+      }
       renderTable();
     });
     $("clearFiltersBtn").addEventListener("click", function () {
@@ -2348,7 +4347,70 @@
       $("filterDoctor").value = "All";
       $("filterStatus").value = "All";
       $("filterDate").value = "";
+      if (dataWindow.mode === "archive") {
+        switchToRecentWindow(false);
+        return;
+      }
       renderTable();
+    });
+
+    // Server-side Archive & History search controls
+    if ($("toggleArchiveBtn")) {
+      $("toggleArchiveBtn").addEventListener("click", function () {
+        var panel = $("archivePanel");
+        var isHidden = panel ? panel.classList.contains("hidden") : true;
+        setArchivePanelOpen(isHidden);
+      });
+    }
+    if ($("backToRecentBtn")) {
+      $("backToRecentBtn").addEventListener("click", function () {
+        filters.date = "";
+        if ($("filterDate")) $("filterDate").value = "";
+        switchToRecentWindow(false);
+      });
+    }
+    if ($("archiveResetBtn")) {
+      $("archiveResetBtn").addEventListener("click", function () {
+        filters.date = "";
+        if ($("filterDate")) $("filterDate").value = "";
+        if ($("archiveQuery")) $("archiveQuery").value = "";
+        switchToRecentWindow(false);
+      });
+    }
+    if ($("archivePanel")) {
+      $("archivePanel").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var fromVal = $("archiveFromDate") ? $("archiveFromDate").value : "";
+        var toVal = $("archiveToDate") ? $("archiveToDate").value : "";
+        var qVal = $("archiveQuery") ? $("archiveQuery").value : "";
+        runArchiveSearch(fromVal, toVal, qVal, "Archive history loaded");
+      });
+    }
+    document.querySelectorAll("[data-archive-preset]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var preset = btn.getAttribute("data-archive-preset");
+        var today = todayIso();
+        var fromVal = "";
+        var toVal = today;
+        if (preset === "30d") {
+          fromVal = addDaysIso(today, -30);
+        } else if (preset === "90d") {
+          fromVal = addDaysIso(today, -90);
+        } else {
+          fromVal = "";
+          toVal = "";
+        }
+        if ($("archiveFromDate")) $("archiveFromDate").value = fromVal;
+        if ($("archiveToDate")) $("archiveToDate").value = toVal;
+        var qVal = $("archiveQuery") ? $("archiveQuery").value : "";
+        var label =
+          preset === "30d"
+            ? "Loaded last 30 days"
+            : preset === "90d"
+              ? "Loaded last 90 days"
+              : "Loaded archive history (newest first)";
+        runArchiveSearch(fromVal, toVal, qVal, label);
+      });
     });
 
     // Summary card quick filters
@@ -2361,6 +4423,14 @@
         } else if (mode === "today") {
           filters.date = todayIso();
           filters.status = "All";
+          $("filterStatus").value = filters.status;
+          $("filterDate").value = filters.date;
+          if (dataWindow.mode === "archive") {
+            switchToRecentWindow(true);
+            return;
+          }
+          renderTable();
+          return;
         } else {
           filters.status = mode;
           filters.date = "";
@@ -2371,25 +4441,37 @@
       });
     });
 
-    // Table delegated actions (Edit, Delete, Inline Status)
-    $("appointmentsTbody").addEventListener("click", function (e) {
-      var editBtn = e.target.closest("[data-edit-id]");
-      if (editBtn) {
-        openEditModal(editBtn.getAttribute("data-edit-id"));
-        return;
-      }
-      var delBtn = e.target.closest("[data-delete-id]");
-      if (delBtn) {
-        openDeleteModal(delBtn.getAttribute("data-delete-id"));
-      }
-    });
+    // Delegated actions for both Desktop Table and Mobile Cards (Edit, Delete, Quick Confirm/Complete, Inline Status)
+    var tableCardEl = $("tableCard");
+    if (tableCardEl) {
+      tableCardEl.addEventListener("click", function (e) {
+        var quickBtn = e.target.closest("[data-quick-status-id]");
+        if (quickBtn && !quickBtn.disabled) {
+          updateAppointmentStatus(
+            quickBtn.getAttribute("data-quick-status-id"),
+            quickBtn.getAttribute("data-quick-status"),
+            quickBtn
+          );
+          return;
+        }
+        var editBtn = e.target.closest("[data-edit-id]");
+        if (editBtn) {
+          openEditModal(editBtn.getAttribute("data-edit-id"));
+          return;
+        }
+        var delBtn = e.target.closest("[data-delete-id]");
+        if (delBtn) {
+          openDeleteModal(delBtn.getAttribute("data-delete-id"));
+        }
+      });
 
-    $("appointmentsTbody").addEventListener("change", function (e) {
-      var selectEl = e.target.closest("[data-inline-status]");
-      if (selectEl) {
-        handleInlineStatusChange(selectEl);
-      }
-    });
+      tableCardEl.addEventListener("change", function (e) {
+        var selectEl = e.target.closest("[data-inline-status]");
+        if (selectEl) {
+          handleInlineStatusChange(selectEl);
+        }
+      });
+    }
 
     // Create / Edit modal events
     $("modalForm").addEventListener("submit", handleModalSubmit);

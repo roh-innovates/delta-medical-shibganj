@@ -12,7 +12,8 @@
     url: SUPABASE_URL,
     anonKey: SUPABASE_ANON_KEY,
     table: "appointments",
-    doctorsTable: "doctors"
+    doctorsTable: "doctors",
+    doctorPhotosBucket: "doctor-photos"
   };
 
   if (window.supabase && typeof window.supabase.createClient === "function") {
