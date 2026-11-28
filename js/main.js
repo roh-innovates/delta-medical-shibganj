@@ -29,13 +29,19 @@
   ];
 
   var LAST_PHONE_KEY = "dmc-last-phone";
+  var ACTIVE_QUEUE_POLL_MS = 30000;
+  var IDLE_QUEUE_POLL_MS = 90000;
+  var QUEUE_FORCE_COOLDOWN_MS = 5000;
+  var QUEUE_VISIBILITY_COOLDOWN_MS = 20000;
   var lastFormResult = null;
   var isSubmitting = false;
   var activeSerialTab = "book";
   var lastLookupState = null;
   var isLookingUp = false;
-  var publicRealtimeChannel = null;
-  var realtimeDebounceTimer = null;
+  var hasLoadedSupabaseDoctors = false;
+  var lastQueueSyncAt = 0;
+  var isRefreshingQueue = false;
+  var queuePollTimer = null;
 
   // Live doctor list (starts with fallback hardcoded list, replaced on load if Supabase `doctors` has rows)
   var activeDoctors = Array.isArray(window.DOCTORS) ? window.DOCTORS.slice() : [];
@@ -268,6 +274,10 @@
     if (open) hideQueueTeaser();
     popover.classList.toggle("hidden", !open);
     fab.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) {
+      refreshLiveQueueSilently(true);
+    }
+    schedulePublicQueuePoll();
   }
 
   function renderLiveQueueTicker() {
@@ -407,50 +417,88 @@
     }
   }
 
-  function refreshLiveQueueSilently() {
-    if (!window.supabaseClient) return;
-
-    window.supabaseClient
-      .from("doctors")
-      .select("*")
-      .eq("is_active", true)
-      .order("display_order", { ascending: true })
-      .order("id", { ascending: true })
-      .then(function (res) {
-        if (res.error || !Array.isArray(res.data) || !res.data.length) return;
-        var mapped = mapSupabaseDoctors(res.data);
-        activeDoctors = mapped.doctors;
-        renderLiveQueueTicker();
-        renderDoctors();
-        if (lastLookupState && lastLookupState.type === "results") {
-          renderLookupResults();
-        }
-      })
-      .catch(function () { /* silent background poll */ });
+  function isPublicQueueActivelyViewed() {
+    var popover = $("liveQueuePopover");
+    var popoverOpen = !!(popover && !popover.classList.contains("hidden"));
+    var hasLookupResults = !!(
+      lastLookupState &&
+      lastLookupState.type === "results" &&
+      Array.isArray(lastLookupState.rows) &&
+      lastLookupState.rows.length > 0
+    );
+    return popoverOpen || hasLookupResults;
   }
 
-  function startPublicLiveQueueRealtime() {
-    if (!window.supabaseClient || publicRealtimeChannel || typeof window.supabaseClient.channel !== "function") {
+  function schedulePublicQueuePoll() {
+    if (queuePollTimer) {
+      clearTimeout(queuePollTimer);
+      queuePollTimer = null;
+    }
+    var baseDelay = isPublicQueueActivelyViewed() ? ACTIVE_QUEUE_POLL_MS : IDLE_QUEUE_POLL_MS;
+    // Small random jitter (0-4s) spreads concurrent visitors evenly instead of synchronized spikes
+    var jitter = Math.floor(Math.random() * 4000);
+    queuePollTimer = setTimeout(function () {
+      queuePollTimer = null;
+      if (!document.hidden) {
+        refreshLiveQueueSilently(false);
+      }
+      schedulePublicQueuePoll();
+    }, baseDelay + jitter);
+  }
+
+  function refreshLiveQueueSilently(force) {
+    if (!window.supabaseClient || isRefreshingQueue) return;
+
+    var now = Date.now();
+    var minGap = force ? QUEUE_FORCE_COOLDOWN_MS : QUEUE_VISIBILITY_COOLDOWN_MS;
+    if (lastQueueSyncAt && now - lastQueueSyncAt < minGap) return;
+
+    // If full directory hasn't loaded from Supabase yet, load it once instead of partial queue columns
+    if (!hasLoadedSupabaseDoctors) {
+      loadActiveDoctorsFromSupabase();
       return;
     }
-    try {
-      publicRealtimeChannel = window.supabaseClient
-        .channel("public-live-queue")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "doctors" },
-          function () {
-            if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
-            realtimeDebounceTimer = setTimeout(function () {
-              realtimeDebounceTimer = null;
-              refreshLiveQueueSilently();
-            }, 250);
+
+    isRefreshingQueue = true;
+    // Fetch only the 3 tiny queue fields (~90% smaller payload than SELECT *)
+    window.supabaseClient
+      .from("doctors")
+      .select("id, current_serial, queue_updated_date")
+      .eq("is_active", true)
+      .then(function (res) {
+        if (res.error || !Array.isArray(res.data)) return;
+        lastQueueSyncAt = Date.now();
+
+        var byId = {};
+        res.data.forEach(function (row) {
+          byId[String(row.id)] = row;
+        });
+
+        var changed = false;
+        activeDoctors.forEach(function (doc) {
+          var fresh = byId[String(doc.id)];
+          if (!fresh) return;
+          var nextSerial = fresh.current_serial != null ? Number(fresh.current_serial) : 0;
+          var nextDate = fresh.queue_updated_date ? String(fresh.queue_updated_date).slice(0, 10) : "";
+          if (doc.current_serial !== nextSerial || doc.queue_updated_date !== nextDate) {
+            doc.current_serial = nextSerial;
+            doc.queue_updated_date = nextDate;
+            changed = true;
           }
-        )
-        .subscribe();
-    } catch (e) {
-      /* Fallback polling stays active if Realtime is unavailable */
-    }
+        });
+
+        if (changed) {
+          renderLiveQueueTicker();
+          renderDoctors();
+          if (lastLookupState && lastLookupState.type === "results") {
+            renderLookupResults();
+          }
+        }
+      })
+      .catch(function () { /* silent background sync */ })
+      .finally(function () {
+        isRefreshingQueue = false;
+      });
   }
 
   function applyDoctorDirectoryUpdate(nextDoctors, nextSpecs) {
@@ -487,6 +535,8 @@
         }
         var rows = Array.isArray(res.data) ? res.data : [];
         if (rows.length > 0) {
+          hasLoadedSupabaseDoctors = true;
+          lastQueueSyncAt = Date.now();
           var mapped = mapSupabaseDoctors(rows);
           applyDoctorDirectoryUpdate(mapped.doctors, mapped.specialties);
           return;
@@ -1624,11 +1674,30 @@
             rows: []
           };
         } else {
+          var fetchedRows = Array.isArray(res && res.data) ? res.data : [];
+          // Sync fresh queue numbers returned by RPC into activeDoctors so UI matches DB immediately
+          var queueUpdated = false;
+          fetchedRows.forEach(function (row) {
+            var liveDoc = findLiveDoctorForLookupRow(row);
+            if (!liveDoc) return;
+            var nextSerial = row.current_serial != null ? Number(row.current_serial) : 0;
+            var nextDate = row.queue_updated_date ? String(row.queue_updated_date).slice(0, 10) : "";
+            if (liveDoc.current_serial !== nextSerial || liveDoc.queue_updated_date !== nextDate) {
+              liveDoc.current_serial = nextSerial;
+              liveDoc.queue_updated_date = nextDate;
+              queueUpdated = true;
+            }
+          });
+          if (queueUpdated) {
+            renderLiveQueueTicker();
+            renderDoctors();
+          }
           lastLookupState = {
             type: "results",
             phone: phone,
-            rows: Array.isArray(res && res.data) ? res.data : []
+            rows: fetchedRows
           };
+          schedulePublicQueuePoll();
         }
         renderLookupResults();
       })
@@ -1958,17 +2027,18 @@
     if (targetSelect) targetSelect.addEventListener("change", updateDayHint);
     if (dateInput) dateInput.addEventListener("change", updateDayHint);
 
-    // Apply initial language (Bangla by default, or saved preference), then load live doctors from Supabase
+    // Apply initial language (Bangla by default, or saved preference), then load live doctors via REST
+    // (Public visitors use lightweight on-demand + throttled REST sync instead of Realtime WebSockets
+    // so Supabase Realtime slots stay reserved for tv.html waiting rooms and admin.html reception.)
     I18N.apply();
     loadActiveDoctorsFromSupabase();
-    startPublicLiveQueueRealtime();
+    schedulePublicQueuePoll();
 
-    // Gentle 60s silent fallback poll + tab-focus refresh (Realtime handles <1s live updates)
-    setInterval(function () {
-      if (!document.hidden) refreshLiveQueueSilently();
-    }, 60000);
     document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) refreshLiveQueueSilently();
+      if (!document.hidden) {
+        refreshLiveQueueSilently(false);
+        schedulePublicQueuePoll();
+      }
     });
   }
 

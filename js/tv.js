@@ -12,6 +12,8 @@
   var SOUND_KEY = "dmc-tv-sound";
   var PAGE_DURATION_MS = 10000;
   var CALLOUT_HOLD_MS = 12000;
+  var BACKUP_POLL_CONNECTED_MS = 120000;
+  var BACKUP_POLL_DISCONNECTED_MS = 30000;
 
   var doctors = [];
   var lastKnownSerials = {};
@@ -20,6 +22,8 @@
   var spotlightTimer = null;
   var realtimeChannel = null;
   var realtimeDebounce = null;
+  var realtimeConnected = false;
+  var backupPollTimer = null;
   var wakeLockSentinel = null;
   var lastRenderedDate = "";
 
@@ -592,8 +596,37 @@
   }
 
   /* ------------ Fetch Active Doctors & Detect +1 Next Increments ------------ */
+  function sortDoctorsByOrder(list) {
+    return list.slice().sort(function (a, b) {
+      var ao = a && a.display_order != null ? Number(a.display_order) : Number.MAX_SAFE_INTEGER;
+      var bo = b && b.display_order != null ? Number(b.display_order) : Number.MAX_SAFE_INTEGER;
+      if (ao !== bo) return ao - bo;
+      return String((a && a.id) || "").localeCompare(String((b && b.id) || ""));
+    });
+  }
+
+  function scheduleBackupPoll() {
+    if (backupPollTimer) {
+      clearTimeout(backupPollTimer);
+      backupPollTimer = null;
+    }
+    var intervalMs = realtimeConnected ? BACKUP_POLL_CONNECTED_MS : BACKUP_POLL_DISCONNECTED_MS;
+    backupPollTimer = setTimeout(function () {
+      backupPollTimer = null;
+      if (!document.hidden) {
+        fetchActiveDoctors();
+      }
+      scheduleBackupPoll();
+    }, intervalMs);
+  }
+
   function setConnectionStatus(state) {
     var badge = $("tvConnectionBadge");
+    var wasConnected = realtimeConnected;
+    realtimeConnected = state === "connected";
+    if (wasConnected !== realtimeConnected) {
+      scheduleBackupPoll();
+    }
     if (!badge) return;
     if (state === "connected") {
       badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>Realtime Live</span>';
@@ -698,6 +731,75 @@
       });
   }
 
+  function scheduleFallbackDoctorsFetch() {
+    if (realtimeDebounce) clearTimeout(realtimeDebounce);
+    realtimeDebounce = setTimeout(function () {
+      realtimeDebounce = null;
+      fetchActiveDoctors();
+    }, 180);
+  }
+
+  function applyRealtimeDoctorPayload(payload) {
+    // Wait for initial full snapshot before patching deltas in memory
+    if (isInitialLoad || !payload) {
+      scheduleFallbackDoctorsFetch();
+      return;
+    }
+
+    var evt = payload.eventType;
+    var nextRow = payload.new;
+    var oldRow = payload.old;
+
+    if (evt === "DELETE") {
+      var delId = oldRow && oldRow.id != null ? String(oldRow.id) : "";
+      if (!delId) {
+        scheduleFallbackDoctorsFetch();
+        return;
+      }
+      var afterDelete = doctors.filter(function (d) {
+        return String(d.id) !== delId;
+      });
+      processIncomingDoctors(afterDelete);
+      return;
+    }
+
+    if ((evt === "UPDATE" || evt === "INSERT") && nextRow && nextRow.id != null) {
+      var targetId = String(nextRow.id);
+      var existingIdx = doctors.findIndex(function (d) {
+        return String(d.id) === targetId;
+      });
+
+      if (nextRow.is_active === false) {
+        if (existingIdx !== -1) {
+          var withoutInactive = doctors.filter(function (d) {
+            return String(d.id) !== targetId;
+          });
+          processIncomingDoctors(withoutInactive);
+        }
+        return;
+      }
+
+      var updatedList = doctors.slice();
+      if (existingIdx !== -1) {
+        updatedList[existingIdx] = Object.assign({}, updatedList[existingIdx], nextRow);
+      } else {
+        // Newly inserted or reactivated doctor: ensure core display fields exist in payload
+        if (!nextRow.name_bn && !nextRow.name_en) {
+          scheduleFallbackDoctorsFetch();
+          return;
+        }
+        updatedList.push(nextRow);
+      }
+
+      var errBox = $("tvError");
+      if (errBox) errBox.classList.add("hidden");
+      processIncomingDoctors(sortDoctorsByOrder(updatedList));
+      return;
+    }
+
+    scheduleFallbackDoctorsFetch();
+  }
+
   function startRealtime() {
     if (!window.supabaseClient || realtimeChannel || typeof window.supabaseClient.channel !== "function") {
       return;
@@ -709,17 +811,18 @@
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "doctors" },
-          function () {
-            if (realtimeDebounce) clearTimeout(realtimeDebounce);
-            realtimeDebounce = setTimeout(function () {
-              realtimeDebounce = null;
-              fetchActiveDoctors();
-            }, 180);
+          function (payload) {
+            applyRealtimeDoctorPayload(payload);
           }
         )
         .subscribe(function (status) {
-          if (status === "SUBSCRIBED") setConnectionStatus("connected");
-          else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setConnectionStatus("error");
+          if (status === "SUBSCRIBED") {
+            var shouldCatchUp = !realtimeConnected && !isInitialLoad;
+            setConnectionStatus("connected");
+            if (shouldCatchUp) fetchActiveDoctors();
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            setConnectionStatus("error");
+          }
         });
     } catch (e) {
       setConnectionStatus("error");
@@ -852,8 +955,8 @@
     fetchActiveDoctors();
     startRealtime();
 
-    // Self-healing 30s backup sync + reconnect on network/tab recovery
-    setInterval(fetchActiveDoctors, 30000);
+    // Adaptive backup sync (2m when Realtime is connected, 30s when disconnected) + recovery hooks
+    scheduleBackupPoll();
     window.addEventListener("online", fetchActiveDoctors);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) {

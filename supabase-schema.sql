@@ -9,6 +9,7 @@ create table if not exists public.appointments (
   serial_no integer,
   patient_name text not null,
   patient_phone text not null,
+  patient_phone_norm text,
   doctor_name text not null,
   department text not null,
   appointment_date date not null,
@@ -18,15 +19,14 @@ create table if not exists public.appointments (
   created_at timestamptz not null default now()
 );
 
+-- Safe idempotent migration for normalized phone indexing
+alter table public.appointments add column if not exists patient_phone_norm text;
+
 alter table public.appointments enable row level security;
 
--- 1. Allow public website visitors (anon + authenticated) to submit new serials
+-- 1. Block direct anon inserts on public.appointments so all public bookings MUST
+--    go through the validated, atomically locked, rate-limited create_public_booking RPC
 drop policy if exists "Public can insert appointments" on public.appointments;
-create policy "Public can insert appointments"
-  on public.appointments
-  for insert
-  to anon, authenticated
-  with check (true);
 
 -- 2. Allow signed-in reception/admin staff full CRUD access
 drop policy if exists "Authenticated staff full access" on public.appointments;
@@ -37,15 +37,70 @@ create policy "Authenticated staff full access"
   using (true)
   with check (true);
 
--- Performance indexes for atomic daily serial assignment & phone lookup
+-- Shared Bangladeshi phone normalizer (Bangla/ASCII digits, strips +88 / 88 prefix)
+create or replace function public.normalize_bd_phone(p_raw text)
+returns text
+language plpgsql
+immutable
+set search_path = pg_catalog, public
+as $$
+declare
+  v_phone text;
+begin
+  v_phone := regexp_replace(
+    translate(coalesce(p_raw, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
+    '[^0-9]',
+    '',
+    'g'
+  );
+  if v_phone ~ '^8801[3-9][0-9]{8}$' then
+    v_phone := substring(v_phone from 3);
+  elsif v_phone ~ '^1[3-9][0-9]{8}$' then
+    v_phone := '0' || v_phone;
+  end if;
+  return v_phone;
+end;
+$$;
+
+-- Trigger to keep patient_phone_norm synced automatically on insert or phone edits
+create or replace function public.trg_set_patient_phone_norm()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.patient_phone_norm := public.normalize_bd_phone(new.patient_phone);
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_appointments_set_phone_norm on public.appointments;
+create trigger trg_appointments_set_phone_norm
+  before insert or update of patient_phone on public.appointments
+  for each row
+  execute function public.trg_set_patient_phone_norm();
+
+-- Idempotent backfill for existing appointments rows
+update public.appointments
+   set patient_phone_norm = public.normalize_bd_phone(patient_phone)
+ where patient_phone_norm is distinct from public.normalize_bd_phone(patient_phone);
+
+-- Performance indexes for atomic serial assignment, <1ms phone lookup, rate limiting & reports
 create index if not exists idx_appointments_doc_date_serial
   on public.appointments (lower(trim(doctor_name)), appointment_date, serial_no);
 
-create index if not exists idx_appointments_phone_date
-  on public.appointments (patient_phone, appointment_date);
+drop index if exists public.idx_appointments_phone_date;
+create index if not exists idx_appointments_phone_norm_date
+  on public.appointments (patient_phone_norm, appointment_date);
+
+create index if not exists idx_appointments_phone_norm_created
+  on public.appointments (patient_phone_norm, created_at desc);
 
 create index if not exists idx_appointments_date_created
   on public.appointments (appointment_date desc, created_at desc);
+
+create index if not exists idx_appointments_created_at
+  on public.appointments (created_at desc);
 
 -- =====================================================================
 -- Doctors Chamber Directory Table & RLS Policies
@@ -92,10 +147,14 @@ create policy "Authenticated staff full access on doctors"
   with check (true);
 
 -- =====================================================================
--- RPC 1: Public Booking (Atomic Lock + Family-Friendly Duplicate Guard)
--- Matches duplicates on (phone + patient_name + doctor + date) where
--- status <> 'Cancelled' so double-taps return the existing SL-XX while
+-- RPC 1: Public Booking (Atomic Lock + Duplicate Guard + Anti-Spam Rate Limits)
+-- Matches duplicates on (normalized phone + patient_name + doctor + date)
+-- where status <> 'Cancelled' so double-taps return the existing SL-XX while
 -- parents can still book multiple family members using one phone.
+-- Rate limits protect against bot/spam floods:
+--   • Max 5 bookings per phone per 10 minutes
+--   • Max 10 active bookings per phone per 24 hours
+--   • Global burst circuit breaker: max 150 bookings per minute
 -- =====================================================================
 
 drop function if exists public.create_public_booking(text, text, text, text, date);
@@ -120,28 +179,19 @@ declare
   v_dhaka_today date;
   v_existing_serial integer;
   v_existing_status text;
+  v_recent_phone_count integer;
+  v_daily_phone_count integer;
+  v_global_minute_count integer;
   v_next_serial integer;
 begin
   v_name := trim(coalesce(p_patient_name, ''));
   v_doctor := trim(coalesce(p_doctor_name, ''));
   v_dept := trim(coalesce(p_department, ''));
   v_dhaka_today := (now() at time zone 'Asia/Dhaka')::date;
+  v_phone := public.normalize_bd_phone(p_patient_phone);
 
-  -- Normalize Bangla/ASCII digits and strip +88 / 88 country prefix
-  v_phone := regexp_replace(
-    translate(coalesce(p_patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
-    '[^0-9]',
-    '',
-    'g'
-  );
-  if v_phone ~ '^8801[3-9][0-9]{8}$' then
-    v_phone := substring(v_phone from 3);
-  elsif v_phone ~ '^1[3-9][0-9]{8}$' then
-    v_phone := '0' || v_phone;
-  end if;
-
-  if length(v_name) < 2 then
-    raise exception 'Patient name must be at least 2 characters';
+  if length(v_name) < 2 or length(v_name) > 120 then
+    raise exception 'Patient name must be between 2 and 120 characters';
   end if;
   if v_phone !~ '^01[3-9][0-9]{8}$' then
     raise exception 'Please enter a valid 11-digit Bangladeshi mobile number';
@@ -149,28 +199,28 @@ begin
   if v_doctor = '' or v_dept = '' or p_appointment_date is null then
     raise exception 'Doctor, department, and appointment date are required';
   end if;
+  if length(v_doctor) > 160 or length(v_dept) > 160 then
+    raise exception 'Doctor or department name is too long';
+  end if;
   if p_appointment_date < v_dhaka_today then
     raise exception 'Appointment date cannot be in the past';
   end if;
 
-  -- Transaction-scoped lock per (doctor, date) prevents concurrent serial collisions
+  -- Lock hierarchy Level 1 (phone) -> Level 2 (doctor|date) prevents both
+  -- parallel rate-limit bypass and concurrent serial number collisions.
+  perform pg_advisory_xact_lock(hashtext('phone|' || v_phone));
   perform pg_advisory_xact_lock(
     hashtext(lower(v_doctor) || '|' || p_appointment_date::text)
   );
 
-  -- Family-friendly duplicate guard: same phone + patient name + doctor + date (active)
+  -- Family-friendly duplicate guard using indexed patient_phone_norm (<1ms B-tree lookup)
   select a.serial_no, a.status
     into v_existing_serial, v_existing_status
   from public.appointments a
-  where regexp_replace(
-          translate(coalesce(a.patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
-          '[^0-9]',
-          '',
-          'g'
-        ) in (v_phone, '88' || v_phone)
+  where a.patient_phone_norm = v_phone
+    and a.appointment_date = p_appointment_date
     and lower(trim(a.patient_name)) = lower(v_name)
     and lower(trim(a.doctor_name)) = lower(v_doctor)
-    and a.appointment_date = p_appointment_date
     and a.status <> 'Cancelled'
   order by a.created_at asc
   limit 1;
@@ -183,6 +233,39 @@ begin
     );
   end if;
 
+  -- Anti-spam guard 1: max 5 bookings per phone in 10 minutes (indexed)
+  select count(*)
+    into v_recent_phone_count
+  from public.appointments a
+  where a.patient_phone_norm = v_phone
+    and a.created_at >= now() - interval '10 minutes';
+
+  if v_recent_phone_count >= 5 then
+    raise exception 'অতিরিক্ত সিরিয়াল অনুরোধ: এই নম্বর থেকে ১০ মিনিটে সর্বোচ্চ ৫টি সিরিয়াল বুক করা যায়। অনুগ্রহ করে কিছুক্ষণ পর চেষ্টা করুন অথবা ০১৭২৪-৩৬৩৮৩৮ নম্বরে কল করুন।';
+  end if;
+
+  -- Anti-spam guard 2: max 10 active bookings per phone in 24 hours (indexed)
+  select count(*)
+    into v_daily_phone_count
+  from public.appointments a
+  where a.patient_phone_norm = v_phone
+    and a.created_at >= now() - interval '24 hours'
+    and a.status <> 'Cancelled';
+
+  if v_daily_phone_count >= 10 then
+    raise exception 'দৈনিক সীমা অতিক্রম: এই নম্বর থেকে ২৪ ঘণ্টায় সর্বোচ্চ ১০টি সিরিয়াল বুক করা যায়। অতিরিক্ত সিরিয়ালের জন্য ০১৭২৪-৩৬৩৮৩৮ নম্বরে কল করুন।';
+  end if;
+
+  -- Anti-spam guard 3: global bot-flood circuit breaker (150 bookings / minute)
+  select count(*)
+    into v_global_minute_count
+  from public.appointments a
+  where a.created_at >= now() - interval '1 minute';
+
+  if v_global_minute_count >= 150 then
+    raise exception 'সার্ভারে অতিরিক্ত চাপ রয়েছে। অনুগ্রহ করে ১ মিনিট পর আবার চেষ্টা করুন অথবা ০১৭২৪-৩৬৩৮৩৮ নম্বরে কল করুন।';
+  end if;
+
   select coalesce(max(serial_no), 0) + 1
     into v_next_serial
   from public.appointments
@@ -193,6 +276,7 @@ begin
     serial_no,
     patient_name,
     patient_phone,
+    patient_phone_norm,
     doctor_name,
     department,
     appointment_date,
@@ -200,6 +284,7 @@ begin
   ) values (
     v_next_serial,
     v_name,
+    v_phone,
     v_phone,
     v_doctor,
     v_dept,
@@ -260,17 +345,7 @@ begin
     else 'Pending'
   end;
 
-  v_phone := regexp_replace(
-    translate(coalesce(p_patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
-    '[^0-9]',
-    '',
-    'g'
-  );
-  if v_phone ~ '^8801[3-9][0-9]{8}$' then
-    v_phone := substring(v_phone from 3);
-  elsif v_phone ~ '^1[3-9][0-9]{8}$' then
-    v_phone := '0' || v_phone;
-  end if;
+  v_phone := public.normalize_bd_phone(p_patient_phone);
 
   if length(v_name) < 2 then
     raise exception 'Patient name is required';
@@ -297,6 +372,7 @@ begin
     serial_no,
     patient_name,
     patient_phone,
+    patient_phone_norm,
     doctor_name,
     department,
     appointment_date,
@@ -305,6 +381,7 @@ begin
   ) values (
     v_next_serial,
     v_name,
+    v_phone,
     v_phone,
     v_doctor,
     v_dept,
@@ -357,17 +434,7 @@ declare
   v_phone text;
   v_dhaka_today date;
 begin
-  v_phone := regexp_replace(
-    translate(coalesce(p_patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
-    '[^0-9]',
-    '',
-    'g'
-  );
-  if v_phone ~ '^8801[3-9][0-9]{8}$' then
-    v_phone := substring(v_phone from 3);
-  elsif v_phone ~ '^1[3-9][0-9]{8}$' then
-    v_phone := '0' || v_phone;
-  end if;
+  v_phone := public.normalize_bd_phone(p_patient_phone);
 
   -- Require exact 11-digit BD mobile number to prevent partial-phone scraping
   if v_phone !~ '^01[3-9][0-9]{8}$' then
@@ -398,12 +465,7 @@ begin
     order by doc.is_active desc, doc.display_order asc nulls last, doc.id asc
     limit 1
   ) d on true
-  where regexp_replace(
-          translate(coalesce(a.patient_phone, ''), '০১২৩৪৫৬৭৮৯', '0123456789'),
-          '[^0-9]',
-          '',
-          'g'
-        ) in (v_phone, '88' || v_phone)
+  where a.patient_phone_norm = v_phone
     and (
       (p_appointment_date is not null and a.appointment_date = p_appointment_date)
       or (p_appointment_date is null and a.appointment_date >= v_dhaka_today)
